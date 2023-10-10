@@ -199,7 +199,8 @@ class Client:
                         hostToken = self.__tcpsocket.recv(128)
                         print(hostToken)
                     # それ以外だと、もう一度名前を入力してもらいたい。
-                    break
+                    else:
+                        break
                         
                 elif operation == 2:
                     # TCP接続確立後のヘッダー送信
@@ -207,6 +208,7 @@ class Client:
                     header = protocol.chatroom_protocol(5, operation, state, "", "", "")
                     self.__tcpsocket.send(header)
                     
+                    # 1回目
                     response_init = self.__tcpsocket.recv(32)
                     room_name_size, operation, state, message_init = protocol.get_server_response_of_header(response_init)
                     print(room_name_size, operation, state, message_init)
@@ -217,6 +219,7 @@ class Client:
                     join_roomName_password = protocol.chatroom_protocol(5, operation, state, roomName, "taro", password)
                     self.__tcpsocket.send(join_roomName_password)
                     
+                    # 2回目
                     response = self.__tcpsocket.recv(32)
                     room_name_size, operation, state, message = protocol.get_server_response_of_header(response)
                     print(room_name_size, operation, state, message)

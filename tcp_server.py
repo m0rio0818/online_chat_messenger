@@ -6,38 +6,46 @@ import time
 
 import protocol
 
+STATUS_MESSAGE = {
+    101: "Try_to_Make_Room",
+    201: "",
+    301: "",
+    401: "Made_And_Joined_Room",
+    501: "Room_Already_Exists",
+}
+
+
 class UserInfo:
-    def __init__(self, __udp_address, __udp__prot, userName, isHost=False) -> None:
+    def __init__(self, address, userName, token ,isHost=False) -> None:
         self.isHost = isHost
-        self.__udp_address = __udp_address
-        self.__udp__prot = __udp__prot
+        self.address = address[0]
+        self.port = address[1]
         self.userName = userName
         self.hadToken = False
-        self.lastActiveTime = time.time()
     
 class ChatRoomInfo:
-    def __init__(self, roomMemberNum, roomName=None, roomPassword = None, accessToken=None,) -> None:
-        self.maxroomMember = roomMemberNum
+    def __init__(self, roomMemberNum, roomName=None, roomPassword = None, ) -> None:
         self.roomName = roomName
+        self.maxroomMember = roomMemberNum
         self.password = roomPassword
-        self.__udp_address = "0.0.0.0"
-        self.__udp__prot = 9010
-        self.accessToken = accessToken
-        self.buffer = 4096
-        self.roomMember = []
         self.lastActiveTime = time.time()
+        self.roomMember = []
+        self.verified_token_to_address = {} # token : address
         
-    def addMember(self, user:UserInfo):
-        # user = UserInfo(address[0], address[1], userName, isHost)
+    def joinRoom(self, user:UserInfo, token: string, address: string):
         self.roomMember.append(user)
+        self.verified_token_to_address[token] = address
+            # return True
+        # return False
     
-    def leaveRoom(self, client_address):
-        # IPアドレスで確認
-        for i in range(len(self.roomMember)):
-            if client_address[0] == self.roomMember[i].__udp_address and client_address[1] == self.roomMember[i].__udp__prot:
-                self.roomMember.pop(i)
-                break
-        print("New member", self.roomMember)
+    def checkLimitNumMember(self):
+        return len(self.roomMember) <= self.maxroomMember
+    
+    def checkPassword(self, password):
+        return self.password == password
+    
+    def leaveRoom(self,):
+        pass
     
     def removeAllUser(self):
         pass
@@ -50,7 +58,7 @@ class ChatRoomInfo:
 class Server:
     def __init__(self, tcp_address:str, tcp_port:int, __udp_address:int, __udp__prot:int, buffer:int=4096) -> None:
         self.__tcpsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._udpsocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.__udpsocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.__tcpaddress = tcp_address
         self.__tcpport = tcp_port
         self.__udp_address = __udp_address
@@ -61,10 +69,17 @@ class Server:
                 "roomEx": ChatRoomInfo(4, "roomEx", "password"),
                 "room2":  ChatRoomInfo(4, "room2", "password"),
             }
+        
+        self.__tcpsocket.bind((self.__tcpaddress, self.__tcpport))
+        self.__udpsocket.bind((self.__udp_address, self.__udp__prot))
+
+
+        
+    def generateToken(selef, size = 128):
+        return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))      
 
     # udp_start
     def udp_start(self):
-        self._udpsocket.bind((self.__udp_address, self.__udp__prot))
         print("UDP server start up on {} port: {}".format(self.__udp_address, self.__udp__prot))
         self.udp_recvAndSend()
     
@@ -72,19 +87,19 @@ class Server:
         try:
             while True:
                 try:
-                    data, client_address = self._udpsocket.recvfrom(self.__buffer)
+                    data, client_address = self.__udpsocket.recvfrom(self.__buffer)
                     str_data = data.decode("utf-8")
                    
                     
                     print("Recived {} bytes from {}".format(len(data), client_address))
                     print(data)
                     [userName, messagedata] = str_data.split(":")
-                    self.roomMember.append(client_address)
+                    self.__roomMember.append(client_address)
                     
                     if data:
                         print(self.roomMember)
                         for c_address in self.roomMember:
-                            sent = self._udpsocket.sendto(data, c_address)      
+                            sent = self.__udpsocket.sendto(data, c_address)      
                             print('Sent {} bytes back to {}'.format(sent, c_address))
                 
                 except KeyboardInterrupt:
@@ -95,14 +110,10 @@ class Server:
     
     def udp_close(self):
         print("Closing UDP server")
-        self._udpsocket.close()
-        
-    def generateToken(selef, size = 128):
-        return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))        
+        self.__udpsocket.close()  
 
     # TCP start
     def tcp_connetcion_start(self):
-        self.__tcpsocket.bind((self.__tcpaddress, self.__tcpport))
         print("Starting up on {} port {}".format(self.__tcpaddress, self.__tcpport))
         self.__tcpsocket.listen(10)
         
@@ -118,8 +129,7 @@ class Server:
             
     def start_chat_of_TCP(self, tcp_connection, client_address):
         print("Connection from {}".format(client_address))
-        # 初回のクライアントからの送信をを受信 + 確認し再送信
-        # 状態等を送信
+        # 初回のクライアントからの送信をを受信 + 確認内容送信
         message = "start"
         print("just started ")
         
@@ -132,6 +142,8 @@ class Server:
         firstResponse = protocol.response_proctocol(room_name_size, operation, state, message)
         self.tcp_response(tcp_connection, firstResponse)
         
+        token = self.generateToken()  
+        client = UserInfo(client_address, username)
         # サーバー初期化(0)
         # room作成
         if operation == 1:
@@ -147,23 +159,23 @@ class Server:
             print("roomの作成を行います。作成するroomname  = {}".format(room_name))
             print("tcp_connection client 情報 {}".format(client_address))
             
+            # 部屋名が存在するか確認
             if not self.findRoom(room_name):
-                print("その部屋名はありませんでした。部屋の作成 + 入室を行います。")
-                message, token = self.makeRoom(room_name_size, room_name, password, client_address, username)
-                print("部屋の作成と入室を行いました。")
-                res_made_room = protocol.response_proctocol(room_name_size, operation, state, message)
+                # room 作成    
+                self.makeRoom(room_name_size, room_name, password)
+                # room参加
+                self.__roomList[room_name].joinRoom(client)
+                
                 # 3回目
+                res_made_room = protocol.response_proctocol(room_name_size, operation, state, message)
                 self.tcp_response(tcp_connection,  res_made_room)
                 # 4回目(Token)
                 self.tcp_response(tcp_connection, bytes(token, "utf-8"))
-
             else:
                 print("その部屋名はすでに存在しています。違う部屋名を再度選んでください。")
-                message = "Room_Already_Exists"
                 # もう一度部屋名を入力してもらう。
-                res_room_exist = protocol.response_proctocol(room_name_size, operation, state, message)
+                res_room_exist = protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[501])
                 self.tcp_response(tcp_connection, res_room_exist)
-            
             
         # room参加
         elif operation == 2:
@@ -171,26 +183,25 @@ class Server:
             message = "want_to_join_the_room"
             room_name_size, operation, state, room_name, username, password = self.tcp_server_recive(tcp_connection)
             print("部屋名、参加したいパスワードを受け取りました。", username, room_name, password)
-            print(self.findRoom(room_name))
-            
-            # 部屋名が見つからなかった場合
+
+            # 部屋が見つからなかった場合
             if not self.findRoom(room_name):
                 print("その部屋名は存在しません")
-                # 部屋名をもう一度入力してもらう。
                 message = "Room_Does_not_Exist"
                 # 2回目
                 res_not_exist = protocol.response_proctocol(room_name_size, operation, state, message)
                 self.tcp_response(tcp_connection, res_not_exist)    
                 print("データを送信しました。")
-            # 部屋名が見つかった場合
+            # 部屋が見つかった場合
             else:
                 print("部屋に入室します")
-                joinRoomCheck, message = self.check_joinRoom(room_name, password)
+                joinRoomCheck, num = self.check_joinRoom(room_name, password)
                 if joinRoomCheck:
-                    self.joinRoom(room_name_size, room_name, client_address, username)
+                    self.__roomList[room_name].joinRoom(client, client_address, token)
                 # 2回目
-                res_joined_room = protocol.response_proctocol(room_name_size, operation, state, message)
-                self.tcp_response(tcp_connection, res_joined_room)    
+                res_joined_room = protocol.response_proctocol(room_name_size, operation, state, message[num])
+                self.tcp_response(tcp_connection, res_joined_room) 
+            # token送信
             
         else:
             message = "failed"
@@ -199,45 +210,27 @@ class Server:
         
         self.tcp_close(tcp_connection)
         
+    def tcp_response(self, tcp_connection, data):
+        tcp_connection.sendall(data)
             
-    def makeRoom(self, maxRoomNum, roomName, password, address, userName):
-        message = "failed"
-        token = self.generateToken()
-        self.__roomList[roomName] = ChatRoomInfo(maxRoomNum, roomName, password, token)
-        
-        Host = UserInfo(address[0], address[1], userName, True)
-        self.__roomList[roomName].roomMember.append(Host)
-        print(self.__roomList)
-        message  = "Made_And_Joined_Room"
-        return (message, token)
-
+    def tcp_close(self, tcp_connection):
+        print("Closing current TCP connection")
+        tcp_connection.close()
+            
+            
+            
+    def makeRoom(self, maxRoomNum, roomName, password):
+        print("その部屋名はありませんでした。部屋の作成 + 入室を行います。")        
+        self.__roomList[roomName] = ChatRoomInfo(maxRoomNum, roomName, password)
+        print("部屋の作成と入室を行いました。")
     
     def check_joinRoom(self, roomName, password):
-        message = "success"
-        join_room_flag = True
+        if not self.__roomList[roomName].checkPassword(password):
+            return (False, 101)
+        if self.__roomList[roomName].checkLimitNumMember():
+            return (False, 201)
+        return (True, 301)
         
-        # 部屋の許容人数に達している。
-        if len(self.__roomList[roomName].roomMember) >= self.__roomList[roomName].maxroomMember:
-            print("部屋は満室です。入室できません。他の部屋を選んでください。")
-            message = "failed_roomsize_over"
-            join_room_flag = False
-            
-        # パスワードが違う
-        if self.__roomList[roomName].password != password:
-            print("password : ",self.__roomList[roomName].password, "passwordInputed ", password)
-            print("パスワードが間違っています。")
-            message = "failed_wrong_password"
-            # もう一度入力してもらう。
-            join_room_flag = False            
-        return (join_room_flag, message)
-    
-    def joinRoom(self, maxRoomNum, roomName, address, userName):
-        user = UserInfo(address[0], address[1], userName, False)
-        self.__roomList[roomName].addMember(user)
-        print("Roomに入室しました。")       
-        print("RoomName: ", roomName, "部屋の最大人数: ", maxRoomNum, "現在の部屋の人数: ", len(self.__roomList[roomName].roomMember) )
-           
-            
     def findRoom(self, roomName):
         for room_n in self.__roomList:
             if room_n == roomName: return True
@@ -259,13 +252,6 @@ class Server:
         return (room_name_size, operation, state, room_name, username, password)
     
     
-    def tcp_response(self, tcp_connection, data):
-        tcp_connection.sendall(data)
-       
-            
-    def tcp_close(self, tcp_connection):
-        print("Closing current TCP connection")
-        tcp_connection.close()
     
 
 def main():    
