@@ -124,8 +124,8 @@ class Client:
         print("Connecting to TCP Server:  {}".format(self.__tcp_address, self.__tcp_port))
         while True:
             self.connect()
-            threading.Thread(target=self.send()).start()
-            # self.send()
+            # threading.Thread(target=self.send()).start()
+            self.send()
         
     def connect(self):
         try:
@@ -175,14 +175,14 @@ class Client:
                     # 1回目
                     response1 = self.__tcpsocket.recv(32)
                     room_name_size, operation, state, message1 = protocol.get_server_response_of_header(response1)
-                    print(room_name_size, operation, state, message1)
+                    print(message1)
                     if state == 1:
                         print("リクエストの応答(1): サーバーから応答がありました。")
                         
                     # 2回目
                     response2 = self.__tcpsocket.recv(32)
                     room_name_size, operation, state, message2 = protocol.get_server_response_of_header(response2)
-                    print(room_name_size, operation, state, message2)
+                    print(message2)
                     if state == 2:
                         # roomName = input("input room name where you want to join : ")
                         header = protocol.chatroom_protocol(5, operation, state, "room1", "")
@@ -211,7 +211,7 @@ class Client:
                     # 1回目
                     response_init = self.__tcpsocket.recv(32)
                     room_name_size, operation, state, message_init = protocol.get_server_response_of_header(response_init)
-                    print(room_name_size, operation, state, message_init)
+                    print(message_init)
                     
                     roomName = input("input Room Name you want to join in : ")
                     password = input("input Password : ")
@@ -222,12 +222,12 @@ class Client:
                     # 2回目
                     response = self.__tcpsocket.recv(32)
                     room_name_size, operation, state, message = protocol.get_server_response_of_header(response)
-                    print(room_name_size, operation, state, message)
+                    print(message)
                     
                     break
                 
             self.tcp_close()
-            threading.Thread(target=self.udp_start())
+            # threading.Thread(target=self.udp_start())
             
         except TimeoutError:
             print("Socket timeout, ending listning for serever messages")
