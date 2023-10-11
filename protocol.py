@@ -68,3 +68,17 @@ def get_user_name(header) -> str:
 
 def get_password(header) -> str:
     return header[21:].decode("utf-8").replace(" ","")
+
+
+#                     # flagPass = True
+                    # flagPass = True
+                    # while flagPass:
+                    #     password = getpass.getpass("input your password : ")
+                    #     if password == getpass.getpass("input your password one more time : "):
+                    #         flagPass = False
+                    #         self.__password = password
+                    #     else:
+                    #         print("Wrong password. please set password one more time")
+                            
+                    # roomname = input("input room name you want to make : ")
+                    # self.__room_name = roomname

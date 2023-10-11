@@ -3,11 +3,13 @@ import random
 import string
 import threading
 import time
+import json
 
 import protocol
 
 STATUS_MESSAGE = {
     000: "Failed",
+    100: "Server_start",
     101: "Try_to_Make_Room",
     201: "Room_is_Full",
     301: "Joined_Room",
@@ -37,12 +39,13 @@ class ChatRoomInfo:
     def joinRoom(self, user:UserInfo, token: string, address: string):
         self.roomMember.append(user)
         self.verified_token_to_address[token] = address
+        print("現在の部屋人数: ",len(self.roomMember),"最大部屋人数: " ,self.maxroomMember,)
     
     def checkLimitNumMember(self):
-        print(len(self.roomMember), self.maxroomMember,)
         return len(self.roomMember) < self.maxroomMember
     
     def checkPassword(self, password):
+        print(self.password, password)
         return self.password == password
     
     def leaveRoom(self,):
@@ -80,7 +83,6 @@ class Server:
         self.__udpsocket.bind((self.__udp_address, self.__udp__prot))
 
 
-        
     def generateToken(selef, size = 128):
         return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))      
 
@@ -92,21 +94,19 @@ class Server:
     def udp_recvAndSend(self):
         try:
             while True:
+                print("Starting recive message...")
                 try:
                     data, client_address = self.__udpsocket.recvfrom(self.__buffer)
                     str_data = data.decode("utf-8")
+                    # print(self.)
                    
-                    
                     print("Recived {} bytes from {}".format(len(data), client_address))
                     print(data)
-                    [userName, messagedata] = str_data.split(":")
-                    self.__roomMember.append(client_address)
-                    
-                    if data:
-                        print(self.roomMember)
-                        for c_address in self.roomMember:
-                            sent = self.__udpsocket.sendto(data, c_address)      
-                            print('Sent {} bytes back to {}'.format(sent, c_address))
+                    # if data:
+                    #     print(self.roomMember)
+                    #     for c_address in self.roomMember:
+                    #         sent = self.__udpsocket.sendto(data, c_address)      
+                    #         print('Sent {} bytes back to {}'.format(sent, c_address))
                 
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
@@ -118,6 +118,10 @@ class Server:
         print("Closing UDP server")
         self.__udpsocket.close()  
 
+    def startServer(self):
+        threading.Thread(target=self.tcp_connetcion_start).start()
+        self.udp_start()
+
     # TCP start
     def tcp_connetcion_start(self):
         print("Starting up on {} port {}".format(self.__tcpaddress, self.__tcpport))
@@ -128,7 +132,6 @@ class Server:
                 tcp_connection, client_address = self.__tcpsocket.accept()
                 threading.Thread(target=self.start_chat_of_TCP, args=(tcp_connection, client_address,)).start()
                 
-                
             except Exception as e:
                 print("Socket close, Error => ", e)
                 self.__tcpsocket.close()
@@ -136,15 +139,21 @@ class Server:
     def start_chat_of_TCP(self, tcp_connection, client_address):
         print("Connection from {}".format(client_address))
         # 初回のクライアントからの送信をを受信 + 確認内容送信
-        message = "start"
         print("just started ")
         
-        room_name_size, operation, state, room_name, username, password = self.tcp_server_recive(tcp_connection)
+        # header受信
+        room_name_size, operation, state, payloadSize = self.tcp_header_recive(tcp_connection)
+        print(room_name_size, operation, state, payloadSize)
+        # body受信        
+        room_name, opeartionPayloadjson = self.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
+        print(room_name, " : ",opeartionPayloadjson)
+        opeartionPayload = json.loads(opeartionPayloadjson)
+        print(opeartionPayload)
         
         message = "Server_start"
         # header (32バイト)：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | message（29バイト）
         # 1回目
-        firstResponse = protocol.response_proctocol(room_name_size, operation, state, message)
+        firstResponse = protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[100])
         self.tcp_response(tcp_connection, firstResponse)
         
         # token クライアント生成
@@ -162,7 +171,7 @@ class Server:
             
             # リクエスト完了(2) : ルーム作成完了
             state = 2
-            print("roomの作成を行います。作成するroomname  = {}".format(room_name))
+            print("roomの作成を行います。roomName : {}".format(room_name))
             print("tcp_connection client 情報 {}:  ".format(client_address))
             
             # 部屋名が存在するか確認
@@ -173,7 +182,7 @@ class Server:
                 self.__roomList[room_name].joinRoom(client, token, client_address)
                 
                 # 3回目
-                res_made_room = protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[404])
+                res_made_room = protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[401])
                 self.tcp_response(tcp_connection,  res_made_room)
                 # 4回目(Token)
                 self.tcp_response(tcp_connection, bytes(token, "utf-8"))
@@ -187,13 +196,12 @@ class Server:
         elif operation == 2:
             print("join the room")
             message = "want_to_join_the_room"
-            room_name_size, operation, state, room_name, username, password = self.tcp_server_recive(tcp_connection)
+            room_name_size, operation, state, room_name, username, password = self.tcp_header_recive(tcp_connection)
             print("部屋名、参加したいパスワードを受け取りました。", username, room_name, password)
 
             # 部屋が見つからなかった場合
             if not self.findRoom(room_name):
                 print("その部屋名は存在しません")
-                message = "Room_Does_not_Exist"
                 # 2回目
                 res_not_exist = protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[404])
                 self.tcp_response(tcp_connection, res_not_exist)    
@@ -209,6 +217,8 @@ class Server:
                 # 2回目
                 res_joined_room = protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[num])
                 self.tcp_response(tcp_connection, res_joined_room)
+                # 3回目(token)
+                self.tcp_response(tcp_connection, bytes(token, "utf-8"))
             
         else:
             res_failed =  protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[000])
@@ -243,32 +253,41 @@ class Server:
         return False
         
     
-    def tcp_server_recive(self, tcp_connection):
+    def tcp_header_recive(self, tcp_connection):
         """
             サーバの初期化(0)
-            Header(32): RoomNameSize(1) | Operation(1) | State(1) | room_name(10) |  userName(10)  | password(10)
+                        最大部屋収容人数  操作(1:作成, 2:入室)
+            Header(32): RoomNameSize(1) | Operation(1) | State(1) | payloadSize(29)
         """
         data = tcp_connection.recv(32)
         room_name_size =int.from_bytes(data[:1], "big")
         operation = int.from_bytes(data[1:2], "big")
         state = int.from_bytes(data[2:3], "big")
-        room_name = data[3:11].decode("utf-8").replace(" ","")
-        username = data[11:21].decode("utf-8").replace(" ", "")
-        password = data[21:].decode("utf-8").replace(" ","")
+        # room_name = data[3:11].decode("utf-8").replace(" ","")
+        # username = data[11:21].decode("utf-8").replace(" ", "")
+        # password = data[21:].decode("utf-8").replace(" ","")
+        payloadSize = int.from_bytes(data[3:], "big")
         
-        return (room_name_size, operation, state, room_name, username, password)
+        return (room_name_size, operation, state, payloadSize)
+    
+
+    def tcp_body_recive(self, tcp_connection, room_name_size, payloadSize):
+        data = tcp_connection.recv(room_name_size + payloadSize).decode()
+        room_name = data[:room_name_size]
+        payload = data[room_name_size: room_name_size+ payloadSize]
+        return (room_name, payload)
     
     
     
 
 def main():    
-    tcpaddress = '0.0.0.0'
+    tcpaddress = '127.0.0.1'
     tcpport = 9001
-    udpaddress = "0.0.0.0"
+    udpaddress = '127.0.0.1'
     udpport = 9010
     server = Server(tcpaddress, tcpport, udpaddress, udpport)
     
-    server.tcp_connetcion_start()
+    server.startServer()
 
     
 if __name__ == "__main__":
