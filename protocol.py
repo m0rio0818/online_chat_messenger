@@ -28,12 +28,9 @@ def chatroom_protocol(room_name_size:int, operation:int, state:int, room_name:st
         password.encode("utf-8")
         
 def get_server_response_of_header(data):
-    room_name_size =int.from_bytes(data[:1], "big")
-    operation = int.from_bytes(data[1:2], "big")
-    state = int.from_bytes(data[2:3], "big")
-    message = data[3:].decode("utf-8").replace(" ", "")
-            
-    return (room_name_size, operation, state, message)
+    state =int.from_bytes(data[:1], "big")
+    messagelength = int.from_bytes(data[2:], "big")     
+    return (state, messagelength)
         
 def response_proctocol(room_name_size:int, operation:int, state:int, message: str):
     if len(message.encode("utf-8")) < 29:
@@ -70,15 +67,4 @@ def get_password(header) -> str:
     return header[21:].decode("utf-8").replace(" ","")
 
 
-#                     # flagPass = True
-                    # flagPass = True
-                    # while flagPass:
-                    #     password = getpass.getpass("input your password : ")
-                    #     if password == getpass.getpass("input your password one more time : "):
-                    #         flagPass = False
-                    #         self.__password = password
-                    #     else:
-                    #         print("Wrong password. please set password one more time")
-                            
-                    # roomname = input("input room name you want to make : ")
-                    # self.__room_name = roomname
+# 

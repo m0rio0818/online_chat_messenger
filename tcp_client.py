@@ -23,7 +23,7 @@ class Client:
     def __init__(self, buffer=4096) -> None:
         self.__tcpsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.__udpsocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.__tcp_address = "localhost"
+        self.__tcp_address = "0.0.0.0"
         self.__udp_address = "0.0.0.0"
         self.__tcp_port = 9001
         self.__udp_port = 9010
@@ -93,6 +93,7 @@ class Client:
                     print("No message please input again\n")
                     continue
                 
+                messageHeader = ()
                 bMessage = bytes(self.__room_name + " : " + message, "utf-8")
                 
                 # サーバーへデータを送信
@@ -162,21 +163,20 @@ class Client:
         while operationFlag:
             operation = input("1: You want to make Room.\n2: You want to join ChatRoom\n")
             operation = int(operation)
-            if operation ==1 or operation == 2:
+            if operation == 1 or operation == 2:
                 operationFlag = False
             else:
                 print("Input Proper Num")
         state = ""
+        
+        
         
         if operation == 1:
             state = 0
         else:
             state = 9
             
-        noRoom = True
-        
-        
-        # 部屋の許容人数の設定も行う。
+        noRoom = True      
         try:
             while noRoom:
                 roomName = input("input Room Name you want to join in : ")
@@ -185,88 +185,79 @@ class Client:
                 self.__password = password
                 self.__room_name_size = len(self.__room_name)
                 self.__username = "Morio"          
-                
+         
                 payload = {
                     # "roomName": self.__room_name,
                     "password": self.__password,
-                    "userName" : self.__username
+                    "userName" : self.__username,
+                    "ip" : self.__tcp_address,
+                    "port" : self.__tcp_port,
                 }
-                
+               
                 jsonPayload = self.chang_to_json(payload)
                 self.__payloadSize = len(jsonPayload)
-                print(jsonPayload)    
+                print(jsonPayload)
                 
+                # TCP接続確立後のヘッダー送信
+                # ヘッダー（32バイト）：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | OperationPayloadSize（29バイト)
+                header = self.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
+                self.__tcpsocket.send(header)
+                
+                # body : roomName (RoomNameSizeバイト) | operationPayload (OperationPayloadSizeバイト)
+                body = bytes(self.__room_name, "utf-8") + bytes(jsonPayload, "utf-8")
+                self.__tcpsocket.send(body)
                 if operation == 1:
-                    # TCP接続確立後のヘッダー送信
-                    # ヘッダー（32バイト）：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | OperationPayloadSize（29バイト)
-                    header = self.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
-                    print(header)
-                    self.__tcpsocket.send(header)
-                    
-                    # body : roomName (RoomNameSizeバイト) | operationPayload (OperationPayloadSizeバイト)
-                    body = bytes(self.__room_name, "utf-8") + bytes(jsonPayload, "utf-8")
-                    self.__tcpsocket.send(body)
-                                        
                     # 1回目
                     response1 = self.__tcpsocket.recv(32)
-                    room_name_size, operation, state, message1 = protocol.get_server_response_of_header(response1)
-                    print(message1)
+                    state, messagelength = protocol.get_server_response_of_header(response1)
+                    firstresponse_Message = self.__tcpsocket.recv(messagelength).decode()
                     if state == 1:
                         print("リクエストの応答(1): サーバーから応答がありました。")
+                        print(firstresponse_Message)
                         
                     # 2回目
+                    print("Next -->> ")
                     response2 = self.__tcpsocket.recv(32)
-                    room_name_size, operation, state, message2 = protocol.get_server_response_of_header(response2)
-                    print(message2)
+                    state, messagelength = protocol.get_server_response_of_header(response2)
+                    print(state, messagelength)
                     if state == 2:
                         # roomName = input("input room name where you want to join : ")
-                        header = self.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
-                        self.__tcpsocket.send(header)
-                        print("send!!")
+                        # header = self.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
+                        # self.__tcpsocket.send(header)
                         print("リクエストの応答(2): 部屋が作成されました")
-                    
-                    # 3回目
-                    response3 = self.__tcpsocket.recv(32)
-                    room_name_size, operation, state, message3 = protocol.get_server_response_of_header(response3)
-                    print("response3: ", room_name_size, operation, state, message3)
-                    if message3 == "Made_And_Joined_Room":                    
-                        # 4回目
+                        secondresponse_Message = self.__tcpsocket.recv(messagelength).decode()
+                        print(secondresponse_Message)
+                        print("token : ", self.__token)
                         self.__token = self.__tcpsocket.recv(128).decode("utf-8")
+                        print("token : " ,self.__token)
                         noRoom = False
-                        self.__room_name  = roomName
                     # それ以外だと、もう一度名前を入力してもらいたい。
                     else:
-                        pass
+                        print(state , "!== 2")
+                        secondresponse_Message = self.__tcpsocket.recv(messagelength).decode()
+                        print(secondresponse_Message)
+                        noRoom = True
                         
                 elif operation == 2:
-                    # TCP接続確立後のヘッダー送信
-                    header = protocol.chatroom_protocol(5, operation, state, "", "", "")
-                    self.__tcpsocket.send(header)
-                    
                     # 1回目
                     response_init = self.__tcpsocket.recv(32)
-                    room_name_size, operation, state, message_init = protocol.get_server_response_of_header(response_init)
-                    print(message_init)
+                    state, messagelength = protocol.get_server_response_of_header(response_init)
+                    print(state, messagelength)
+                    message = self.__tcpsocket.recv(messagelength)
+                    print("1回目",message)
                     
-                    
-                    join_roomName_password = protocol.chatroom_protocol(5, operation, state, roomName, self.__username, password)
-                    self.__tcpsocket.send(join_roomName_password)
-                    
-                    # 2回目
-                    response = self.__tcpsocket.recv(32)
-                    room_name_size, operation, state, message = protocol.get_server_response_of_header(response)
-                    if message == "Room_Does_not_Exist":
+                    print("2回目",message)
+                    if message == "Room Does not Exist":
                         print("その部屋は存在しません。")
-                    elif message == "Wrong_Password":
+                    elif message == "Wrong Password":
                         print("パスワードが間違っています。")
-                    elif message == "Room_is_Full":
+                    elif message == "Room is Full":
                         print("部屋は満室です。他の部屋を入力してください。")
                     else:
                         print("部屋に入室が完了いたしました。")
+                        # 2回目　token取得
                         self.__token = self.__tcpsocket.recv(128).decode("utf-8")
                         noRoom = False
-                        self.__room_name = roomName
-                        print("token ",self.__token)
                         break
     
             self.tcp_close()
@@ -280,7 +271,6 @@ class Client:
     def tcp_close(self):
         print("Closing TCP socket...")
         self.__tcpsocket.close()
-            
     
     
             
