@@ -86,31 +86,35 @@ class Server:
     def generateToken(selef, size = 128):
         return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))      
 
-    # udp_start
-    def udp_start(self):
-        print("UDP server start up on {} port: {}".format(self.__udp_address, self.__udp__prot))
-        self.udp_recvAndSend()
+    # udp_start        
+    def get_udp_header(self, data):
+        room_name_size = int.from_bytes(data[:1], "big")
+        token_size = int.from_bytes(data[1:2], "big")
+        return (room_name_size, token_size)
     
     def udp_recvAndSend(self):
         try:
             while True:
                 print("Starting recive message...")
                 try:
-                    data, client_address = self.__udpsocket.recvfrom(self.__buffer)
-                    str_data = data.decode("utf-8")
-                    # print(self.)
-                   
-                    print("Recived {} bytes from {}".format(len(data), client_address))
-                    print(data)
-                    # if data:
-                    #     print(self.roomMember)
-                    #     for c_address in self.roomMember:
-                    #         sent = self.__udpsocket.sendto(data, c_address)      
-                    #         print('Sent {} bytes back to {}'.format(sent, c_address))
-                
+                    print("UDP start")
+                    data, client_address = self.__udpsocket.recvfrom(2)
+                    room_name_size, token_size = self.get_udp_header(data)
+                    
+                    body = self.__udpsocket.recv(self.__buffer)
+
+                    room_name = body[:room_name_size].decode()
+                    token = body[room_name_size:room_name_size+token_size].decode()
+                    message = body[room_name_size+token_size:].decode()
+                    print(room_name, token, message)
+                    print(self.__roomList[room_name].verified_token_to_address, client_address)
+                    # tokenによって、addressをTCPの時から上書きする。
+                    
+                    print("Recived {} bytes from {}".format(len(body), client_address))
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
                     break
+                
         finally:
             self.udp_close()
     
@@ -119,14 +123,13 @@ class Server:
         self.__udpsocket.close()  
 
     def startServer(self):
-        threading.Thread(target=self.tcp_connetcion_start).start()
-        self.udp_start()
+        threading.Thread(target=self.wait_tcp_connetcion).start()
+        self.udp_recvAndSend()
 
     # TCP start
-    def tcp_connetcion_start(self):
-        print("Starting up on {} port {}".format(self.__tcpaddress, self.__tcpport))
+    def wait_tcp_connetcion(self):
+        print("Starting up on {} TCP port {}".format(self.__tcpaddress, self.__tcpport))
         self.__tcpsocket.listen(10)
-        
         while True:
             try:
                 tcp_connection, client_address = self.__tcpsocket.accept()
@@ -137,9 +140,9 @@ class Server:
                 self.__tcpsocket.close()
             
     def start_chat_of_TCP(self, tcp_connection, client_address):
-        print("Connection from {}".format(client_address))
+        print("TCP Connection from {}".format(client_address))
         # 初回のクライアントからの送信をを受信 + 確認内容送信
-        print("just started ")
+        print("TCP just started ")
         
         # header受信
         room_name_size, operation, state, payloadSize = self.tcp_header_recive(tcp_connection)
@@ -302,7 +305,6 @@ def main():
     udpaddress = '127.0.0.1'
     udpport = 9010
     server = Server(tcpaddress, tcpport, udpaddress, udpport)
-    
     server.startServer()
 
     

@@ -46,6 +46,9 @@ class Client:
     def tcp_chatroom_protocolheader(self, room_name_size, opeartion, state, json_string_payload_size):
         return room_name_size.to_bytes(1, "big") + opeartion.to_bytes(1, "big") + state.to_bytes(1, "big") + json_string_payload_size.to_bytes(29, "big")
     
+    def udp_protocolheader(self, room_name_size, tokenSize):
+        return  room_name_size.to_bytes(1, "big") + tokenSize.to_bytes(1, "big")
+    
     def chang_to_json(self, data):
         return json.dumps(data)
     
@@ -85,19 +88,23 @@ class Client:
     def udp_sendMessage(self):
         while self.__connection:
             try:
+                messageHeader = self.udp_protocolheader(self.__room_name_size, self.__tokensize)
+                sent = self.__udpsocket.sendto(messageHeader, (self.__udp_address, self.__udp_port))
+                
                 message = input("Input message your messsage : ")
                 if message == "exit":
                     break
-                
                 if not message:
                     print("No message please input again\n")
                     continue
                 
-                messageHeader = ()
-                bMessage = bytes(self.__room_name + " : " + message, "utf-8")
+                # サーバーへメッセージを送信
+                print((self.__room_name + self.__token + message))
+                bytes(self.__room_name + self.__token + message , "utf-8")
+                bMessage = bytes(self.__room_name + self.__token + message, "utf-8")
+                print(bMessage)
+                sent = self.__udpsocket.sendto(bMessage, (self.__udp_address, self.__udp_port))
                 
-                # サーバーへデータを送信
-                sent = self.__udpsocket.sendto(bMessage,(self.__udp_address, self.__udp_port))
                 print('send {} bytes'.format(sent))
                 self.__lastSenttime = time.time()
             
@@ -179,12 +186,13 @@ class Client:
         noRoom = True      
         try:
             while noRoom:
+                username = input("input your Name (userName) : ")
                 roomName = input("input Room Name you want to join in : ")
                 password = input("input Password : ")
                 self.__room_name = roomName
                 self.__password = password
                 self.__room_name_size = len(self.__room_name)
-                self.__username = "Morio"          
+                self.__username = username          
          
                 payload = {
                     # "roomName": self.__room_name,
@@ -227,9 +235,8 @@ class Client:
                         print("リクエストの応答(2): 部屋が作成されました")
                         secondresponse_Message = self.__tcpsocket.recv(messagelength).decode()
                         print(secondresponse_Message)
-                        print("token : ", self.__token)
                         self.__token = self.__tcpsocket.recv(128).decode("utf-8")
-                        print("token : " ,self.__token)
+                        self.__tokensize = len(self.__token)
                         noRoom = False
                     # それ以外だと、もう一度名前を入力してもらいたい。
                     else:
@@ -257,6 +264,7 @@ class Client:
                         print("部屋に入室が完了いたしました。")
                         # 2回目　token取得
                         self.__token = self.__tcpsocket.recv(128).decode("utf-8")
+                        self.__tokensize = len(self.__token)
                         noRoom = False
                         break
     
