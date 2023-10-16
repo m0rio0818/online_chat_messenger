@@ -7,17 +7,6 @@ import json
 
 import protocol
 
-class UDPClient:
-    def __init__(self, username, port, address="0.0.0.0", buffer=4096) -> None:
-        self.__socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.__serverAddress = '0.0.0.0'
-        self.__serverPort = 9010
-        self.__username = username
-        self.__address = address
-        self.__port = int(port)
-        self.__buffer = buffer
-        self.__lastSenttime = time.time()
-        self.__connection = True
 
 class Client:
     def __init__(self, buffer=4096) -> None:
@@ -41,13 +30,6 @@ class Client:
         
         self.__udpsocket.bind((self.__udp_address, 0))
         
-        
-    
-    def tcp_chatroom_protocolheader(self, room_name_size, opeartion, state, json_string_payload_size):
-        return room_name_size.to_bytes(1, "big") + opeartion.to_bytes(1, "big") + state.to_bytes(1, "big") + json_string_payload_size.to_bytes(29, "big")
-    
-    def udp_protocolheader(self, room_name_size, tokenSize):
-        return  room_name_size.to_bytes(1, "big") + tokenSize.to_bytes(1, "big")
     
     def chang_to_json(self, data):
         return json.dumps(data)
@@ -88,7 +70,7 @@ class Client:
     def udp_sendMessage(self):
         while self.__connection:
             try:
-                messageHeader = self.udp_protocolheader(self.__room_name_size, self.__tokensize)
+                messageHeader = protocol.udp_protocolheader(self.__room_name_size, self.__tokensize)
                 sent = self.__udpsocket.sendto(messageHeader, (self.__udp_address, self.__udp_port))
                 
                 message = input("Input message your messsage : ")
@@ -111,6 +93,9 @@ class Client:
             except KeyboardInterrupt as e:
                 print("keyboardInterrrupt called!" + str(e))
                 break
+            
+            finally:
+                self.udp_close() 
     
     def udp_recive(self):
         try:
@@ -147,16 +132,14 @@ class Client:
         print("Closing UDP socket")
         self.__udpsocket.close()    
     # UDP end
-            
      
     
     # TCP start
     def tcp_start(self):
         print("Connecting to TCP Server:  {}".format(self.__tcp_address, self.__tcp_port))
-        while True:
-            self.connect()
-            # threading.Thread(target=self.send()).start()
-            self.tcp_Request()
+        self.connect()
+        # threading.Thread(target=self.send()).start()
+        self.tcp_Request()
         
     def connect(self):
         try:
@@ -176,8 +159,7 @@ class Client:
                 print("Input Proper Num")
         state = ""
         
-        
-        
+    
         if operation == 1:
             state = 0
         else:
@@ -208,7 +190,7 @@ class Client:
                 
                 # TCP接続確立後のヘッダー送信
                 # ヘッダー（32バイト）：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | OperationPayloadSize（29バイト)
-                header = self.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
+                header = protocol.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
                 self.__tcpsocket.send(header)
                 
                 # body : roomName (RoomNameSizeバイト) | operationPayload (OperationPayloadSizeバイト)
@@ -269,17 +251,15 @@ class Client:
                         break
     
             self.tcp_close()
-            threading.Thread(target=self.udp_start).start()
+            threading.Thread(target=self.udp_recive).start()
             
         except TimeoutError:
             print("Socket timeout, ending listning for serever messages")
             
-    
-    
+
     def tcp_close(self):
         print("Closing TCP socket...")
         self.__tcpsocket.close()
-    
     
             
             

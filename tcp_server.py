@@ -86,12 +86,12 @@ class Server:
     def generateToken(selef, size = 128):
         return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))      
 
-    # udp_start        
     def get_udp_header(self, data):
         room_name_size = int.from_bytes(data[:1], "big")
         token_size = int.from_bytes(data[1:2], "big")
         return (room_name_size, token_size)
     
+    # udp_start      
     def udp_recvAndSend(self):
         try:
             while True:
@@ -99,10 +99,9 @@ class Server:
                 try:
                     print("UDP start")
                     data, client_address = self.__udpsocket.recvfrom(2)
-                    room_name_size, token_size = self.get_udp_header(data)
+                    room_name_size, token_size = protocol.get_udp_header(data)
                     
                     body = self.__udpsocket.recv(self.__buffer)
-
                     room_name = body[:room_name_size].decode()
                     token = body[room_name_size:room_name_size+token_size].decode()
                     message = body[room_name_size+token_size:].decode()
@@ -114,6 +113,8 @@ class Server:
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
                     break
+                except Exception as e:
+                    print("例外発生: ", e)
                 
         finally:
             self.udp_close()
@@ -123,9 +124,10 @@ class Server:
         self.__udpsocket.close()  
 
     def startServer(self):
-        threading.Thread(target=self.wait_tcp_connetcion).start()
-        self.udp_recvAndSend()
-
+        # TCP 並列処理
+        threading.Thread(target=self.wait_tcp_connetcion(), daemon=True).start()
+        
+        
     # TCP start
     def wait_tcp_connetcion(self):
         print("Starting up on {} TCP port {}".format(self.__tcpaddress, self.__tcpport))
@@ -133,27 +135,26 @@ class Server:
         while True:
             try:
                 tcp_connection, client_address = self.__tcpsocket.accept()
-                threading.Thread(target=self.start_chat_of_TCP, args=(tcp_connection, client_address,)).start()
-                
+                threading.Thread(target=self.start_room_TCP, args=(tcp_connection, client_address,)).start()
+                self.udp_recvAndSend()
             except Exception as e:
                 print("Socket close, Error => ", e)
                 self.__tcpsocket.close()
             
-    def start_chat_of_TCP(self, tcp_connection, client_address):
+    def start_room_TCP(self, tcp_connection, client_address):
         print("TCP Connection from {}".format(client_address))
         # 初回のクライアントからの送信をを受信 + 確認内容送信
         print("TCP just started ")
         
         # header受信
-        room_name_size, operation, state, payloadSize = self.tcp_header_recive(tcp_connection)
+        room_name_size, operation, state, payloadSize = protocol.tcp_header_recive(tcp_connection)
         print(room_name_size, operation, state, payloadSize)
         
         # body受信        
-        room_name, opeartionPayloadjson = self.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
+        room_name, opeartionPayloadjson = protocol.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
         # print(room_name, " : ",opeartionPayloadjson)
         opeartionPayload = json.loads(opeartionPayloadjson)
         print(opeartionPayload)
-        
        
         # header (32バイト)：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | message（29バイト）
         # サーバー初期化(0)
@@ -168,7 +169,7 @@ class Server:
             # 1回目
             # リクエスト応答(1)
             # response_header(32バイト)： state(1バイト) | statusMessageLength(31バイト)
-            firstResponse_header = self.response_header(state, len(STATUS_MESSAGE[101]))
+            firstResponse_header = protocol.response_header(state, len(STATUS_MESSAGE[101]))
             self.tcp_response(tcp_connection, firstResponse_header)
             # response_body: statusMessage(statusMessageLenバイト)
             self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[101], "utf-8"))
@@ -188,7 +189,7 @@ class Server:
                 self.__roomList[room_name].joinRoom(client, token, client_address)
                 
                 # 2回目
-                res_make_init = self.response_header(state, len(STATUS_MESSAGE[401]))
+                res_make_init = protocol.response_header(state, len(STATUS_MESSAGE[401]))
                 self.tcp_response(tcp_connection, res_make_init)
                 self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[401], "utf-8"))
                 # 3回目(Token)
@@ -196,7 +197,7 @@ class Server:
             else:
                 print("その部屋名はすでに存在しています。違う部屋名を再度入力してください。")
                 state = 9
-                res_room_exist = self.response_header(state, len(STATUS_MESSAGE[501]))
+                res_room_exist = protocol.response_header(state, len(STATUS_MESSAGE[501]))
                 self.tcp_response(tcp_connection, res_room_exist)
                 self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[501], "utf-8"))
                 
@@ -210,7 +211,7 @@ class Server:
             if not self.findRoom(room_name):
                 print("その部屋名は存在しません")
                 # 1回目
-                firstResponse_header = self.response_header(state, len(STATUS_MESSAGE[404]))
+                firstResponse_header = protocol.response_header(state, len(STATUS_MESSAGE[404]))
                 self.tcp_response(tcp_connection, firstResponse_header)
                 self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[404], "utf-8"))
                 print("データを送信しました。")
@@ -223,7 +224,7 @@ class Server:
                 if joinRoomCheck:
                     self.__roomList[room_name].joinRoom(client, client_address, token)
                     # 1回目
-                    secondeResponse_header = self.response_header(state,  len(STATUS_MESSAGE[num]))
+                    secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
                     self.tcp_response(tcp_connection, secondeResponse_header)
                     self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
                     print("部屋に入室しました。")
@@ -232,7 +233,7 @@ class Server:
                 else:
                     print("エラーのため、部屋に入室できませんでした。", STATUS_MESSAGE[num])
                     # 2回目
-                    secondeResponse_header = self.response_header(state,  len(STATUS_MESSAGE[num]))
+                    secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
                     self.tcp_response(tcp_connection, secondeResponse_header)
                     self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
             
@@ -251,10 +252,9 @@ class Server:
             
             
     def response_to_client(self, tcp_connection, state, num):
-        secondeResponse_header = self.response_header(state,  len(STATUS_MESSAGE[num]))
+        secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
         self.tcp_response(tcp_connection, secondeResponse_header)
         self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
-            
             
     def makeRoom(self, roomName, password, maxRoomNum=4):
         print("その部屋名はありませんでした。部屋の作成 + 入室を行います。")        
@@ -272,31 +272,7 @@ class Server:
         for room_n in self.__roomList:
             if room_n == roomName: return True
         return False
-        
-    
-    def tcp_header_recive(self, tcp_connection):
-        """
-            サーバの初期化(0)
-                        最大部屋収容人数  操作(1:作成, 2:入室)
-            Header(32): RoomNameSize(1) | Operation(1) | State(1) | payloadSize(29)
-        """
-        data = tcp_connection.recv(32)
-        room_name_size =int.from_bytes(data[:1], "big")
-        operation = int.from_bytes(data[1:2], "big")
-        state = int.from_bytes(data[2:3], "big")
-        payloadSize = int.from_bytes(data[3:], "big")
-        
-        return (room_name_size, operation, state, payloadSize)
-    
-
-    def tcp_body_recive(self, tcp_connection, room_name_size, payloadSize):
-        data = tcp_connection.recv(room_name_size + payloadSize).decode()
-        room_name = data[:room_name_size]
-        payload = data[room_name_size: room_name_size+ payloadSize]
-        return (room_name, payload)
-    
-    def response_header(self, state, length_message):
-        return state.to_bytes(1, "big") + length_message.to_bytes(31, "big")
+   
     
 
 def main():    
