@@ -98,13 +98,18 @@ class Server:
                 print("Starting recive message...")
                 try:
                     print("UDP start")
-                    data, client_address = self.__udpsocket.recvfrom(2)
-                    room_name_size, token_size = protocol.get_udp_header(data)
-                    
-                    body = self.__udpsocket.recv(self.__buffer)
-                    room_name = body[:room_name_size].decode()
-                    token = body[room_name_size:room_name_size+token_size].decode()
-                    message = body[room_name_size+token_size:].decode()
+                    body, client_address = self.__udpsocket.recvfrom(self.__buffer)
+                    # room_name_size, token_size = protocol.get_udp_header(data)
+                    print(body)
+                    print(body[:2])
+                    room_name_size = int.from_bytes(body[:1], "big")
+                    token_size = int.from_bytes(body[1:2], "big")
+                    print("Messsage Header", room_name_size, token_size)                
+                                        
+                    # body = self.__udpsocket.recv(self.__buffer)
+                    room_name = body[2:room_name_size+2].decode()
+                    token = body[room_name_size+2:room_name_size+token_size+2].decode()
+                    message = body[room_name_size+token_size+2:].decode()
                     print(room_name, token, message)
                     print(self.__roomList[room_name].verified_token_to_address, client_address)
                     # tokenによって、addressをTCPの時から上書きする。
@@ -125,18 +130,20 @@ class Server:
 
     def startServer(self):
         # TCP 並列処理
-        threading.Thread(target=self.wait_tcp_connetcion(), daemon=True).start()
-        
+        threading.Thread(target=self.wait_tcp_connetcion, daemon=True).start()
+        # threading.Thread(target=self.udp_recvAndSend, daemon=True).start()
+        self.udp_recvAndSend()
         
     # TCP start
     def wait_tcp_connetcion(self):
         print("Starting up on {} TCP port {}".format(self.__tcpaddress, self.__tcpport))
         self.__tcpsocket.listen(10)
+        
         while True:
             try:
                 tcp_connection, client_address = self.__tcpsocket.accept()
                 threading.Thread(target=self.start_room_TCP, args=(tcp_connection, client_address,)).start()
-                self.udp_recvAndSend()
+                # self.udp_recvAndSend()
             except Exception as e:
                 print("Socket close, Error => ", e)
                 self.__tcpsocket.close()
@@ -154,8 +161,7 @@ class Server:
         room_name, opeartionPayloadjson = protocol.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
         # print(room_name, " : ",opeartionPayloadjson)
         opeartionPayload = json.loads(opeartionPayloadjson)
-        print(opeartionPayload)
-       
+
         # header (32バイト)：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | message（29バイト）
         # サーバー初期化(0)
         print("Server just start!")

@@ -30,15 +30,6 @@ class Client:
         
         self.__udpsocket.bind((self.__udp_address, 0))
         
-    
-    def chang_to_json(self, data):
-        return json.dumps(data)
-    
-    def startClient(self):
-        self.tcp_start()
-        threading.Thread(target=self.udp_sendMessage, daemon=True).start()
-        self.udp_recive()
-    
     # UDP start
     def udp_start(self):
         print("Starting up on UDP : {}  {}".format(self.__udpsocket, 0))
@@ -68,10 +59,12 @@ class Client:
             self.udp_close()    
         
     def udp_sendMessage(self):
-        while self.__connection:
-            try:
+        try:
+            while True:
                 messageHeader = protocol.udp_protocolheader(self.__room_name_size, self.__tokensize)
-                sent = self.__udpsocket.sendto(messageHeader, (self.__udp_address, self.__udp_port))
+                # print(messageHeader)
+                # sent = self.__udpsocket.sendto(messageHeader, (self.__udp_address, self.__udp_port))
+                # print(sent)
                 
                 message = input("Input message your messsage : ")
                 if message == "exit":
@@ -81,21 +74,20 @@ class Client:
                     continue
                 
                 # サーバーへメッセージを送信
-                print((self.__room_name + self.__token + message))
-                bytes(self.__room_name + self.__token + message , "utf-8")
+                # print("Message To Server: ",(messageHeader + self.__room_name + self.__token + message))
                 bMessage = bytes(self.__room_name + self.__token + message, "utf-8")
-                print(bMessage)
-                sent = self.__udpsocket.sendto(bMessage, (self.__udp_address, self.__udp_port))
+                print(messageHeader + bMessage)
+                sent = self.__udpsocket.sendto(messageHeader + bMessage, (self.__udp_address, self.__udp_port))
                 
                 print('send {} bytes'.format(sent))
                 self.__lastSenttime = time.time()
             
-            except KeyboardInterrupt as e:
-                print("keyboardInterrrupt called!" + str(e))
-                break
+        except KeyboardInterrupt as e:
+            print("keyboardInterrrupt called!" + str(e))
             
-            finally:
-                self.udp_close() 
+        finally:
+            print("UDP Send を終了します。")
+            self.udp_close() 
     
     def udp_recive(self):
         try:
@@ -135,11 +127,13 @@ class Client:
      
     
     # TCP start
-    def tcp_start(self):
+    def start(self):
         print("Connecting to TCP Server:  {}".format(self.__tcp_address, self.__tcp_port))
         self.connect()
-        # threading.Thread(target=self.send()).start()
         self.tcp_Request()
+        print("Connnecting UDP...")
+        threading.Thread(target=self.udp_sendMessage, daemon=True).start()
+        self.udp_recive()
         
     def connect(self):
         try:
@@ -158,7 +152,6 @@ class Client:
             else:
                 print("Input Proper Num")
         state = ""
-        
     
         if operation == 1:
             state = 0
@@ -177,14 +170,13 @@ class Client:
                 self.__username = username          
          
                 payload = {
-                    # "roomName": self.__room_name,
                     "password": self.__password,
                     "userName" : self.__username,
                     "ip" : self.__tcp_address,
                     "port" : self.__tcp_port,
                 }
                
-                jsonPayload = self.chang_to_json(payload)
+                jsonPayload = json.dumps(payload)
                 self.__payloadSize = len(jsonPayload)
                 print(jsonPayload)
                 
@@ -206,7 +198,6 @@ class Client:
                         print(firstresponse_Message)
                         
                     # 2回目
-                    print("Next -->> ")
                     response2 = self.__tcpsocket.recv(32)
                     state, messagelength = protocol.get_server_response_of_header(response2)
                     print(state, messagelength)
@@ -231,11 +222,9 @@ class Client:
                     # 1回目
                     response_init = self.__tcpsocket.recv(32)
                     state, messagelength = protocol.get_server_response_of_header(response_init)
-                    print(state, messagelength)
                     message = self.__tcpsocket.recv(messagelength)
                     print("1回目",message)
                     
-                    print("2回目",message)
                     if message == "Room Does not Exist":
                         print("その部屋は存在しません。")
                     elif message == "Wrong Password":
@@ -251,7 +240,9 @@ class Client:
                         break
     
             self.tcp_close()
-            threading.Thread(target=self.udp_recive).start()
+            threading.Thread(target=self.udp_recive, daemon=True).start()
+            # threading.Thread(target=self.udp_sendMessage, daemon=True).start()
+            self.udp_sendMessage()
             
         except TimeoutError:
             print("Socket timeout, ending listning for serever messages")
@@ -262,10 +253,9 @@ class Client:
         self.__tcpsocket.close()
     
             
-            
 def main():
     tcplient = Client()
-    tcplient.startClient()
+    tcplient.start()
     
 if __name__ == "__main__":
     main()
