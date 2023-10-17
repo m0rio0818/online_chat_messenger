@@ -10,6 +10,9 @@ def tcp_chatroom_protocolheader( room_name_size, opeartion, state, json_string_p
 def udp_protocolheader(room_name_size, tokenSize):
     return  room_name_size.to_bytes(1, "big") + tokenSize.to_bytes(1, "big")
         
+def protocol_header(protocol):
+    return protocol.to_bytes(3, "big")        
+
 def tcp_header_recive(tcp_connection):
     """
         サーバの初期化(0)

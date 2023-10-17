@@ -17,6 +17,7 @@ STATUS_MESSAGE = {
     403: "Wrong Password",
     404: "Room Does not Exist",
     501: "Room Already Exists",
+    505: "you left the room. please re enter the room if u want to join this community"
 }
 
 
@@ -27,9 +28,10 @@ class UserInfo:
         self.address = address
         self.port = port
         self.userName = userName
+        self.lastActiveTime = time.time()
     
 class ChatRoomInfo:
-    def __init__(self, roomMemberNum, roomName=None, roomPassword = None, ) -> None:
+    def __init__(self, roomMemberNum, roomName=None, roomPassword=None,) -> None:
         self.roomName = roomName
         self.maxroomMember = roomMemberNum
         self.password = roomPassword
@@ -45,7 +47,7 @@ class ChatRoomInfo:
     def sendMessagetoAllUser(self, udpsocket, message, token):
         for tokenkey in self.verified_token_to_address.keys():
             udpsocket.sendto(bytes(message, "utf-8"), self.verified_token_to_address[tokenkey])
-    
+
     def checkLimitNumMember(self):
         return len(self.roomMember) < self.maxroomMember
     
@@ -53,8 +55,27 @@ class ChatRoomInfo:
         print(self.password, password)
         return self.password == password
     
-    def leaveRoom(self,):
-        pass
+    def leaveRoom(self, token):
+        self.verified_token_to_address.pop(token)
+        for i in range(len(self.roomMember)):
+            if self.roomMember[i].token == token:
+                self.roomMember.pop(i)
+                break
+        print("部屋を退出しました。")
+
+        
+    def changeClientAddress(self, token, address):
+        for member in self.roomMember:
+            if member.token == token:
+                member.address = address[0]
+                member.port = address[1]
+                return
+
+    def findRoomMember(self, token):
+        for member in self.roomMember:
+            if member.token == token:
+                return member
+        return False
     
     def checkHost(self):
         for member in self.roomMember:
@@ -83,7 +104,6 @@ class Server:
                 "room2":  ChatRoomInfo(4, "room2", "password"),
             }
             # roomName: ChatRoomInfo()
-        
         self.__tcpsocket.bind((self.__tcpaddress, self.__tcpport))
         self.__udpsocket.bind((self.__udp_address, self.__udp__prot))
 
@@ -98,17 +118,23 @@ class Server:
                 try:
                     body, client_address = self.__udpsocket.recvfrom(self.__buffer)
                     room_name, token, message = protocol.get_udp_body(body)
-                    print(room_name, token, message)
         
-                    print(self.__roomList[room_name].verified_token_to_address[token], client_address)
-                    # tokenによって、addressをTCPの時から上書きする。
-                    # userInfoも同様
+                    if (self.__roomList[room_name].verified_token_to_address[token] != client_address):
+                        # tokenによって、addressをTCPの時から上書きする。
+                        self.__roomList[room_name].verified_token_to_address[token] =  client_address
+                        self.__roomList[room_name].changeClientAddress(token, client_address)
                     
-                    self.__roomList[room_name].verified_token_to_address[token] =  client_address
-                    print("Recived {} bytes from {}".format(len(body), client_address))
+                    print("Recived {} [{} bytes] from {}".format(message, len(body), client_address))
+                    # ここでユーザーの最新アクティブ時間の変更
+                    self.__roomList[room_name].findRoomMember(token).lastActiveTime = time.time()
+                    
+                    if message == "exit":
+                        self.__roomList[room_name].leaveRoom(token)
+                        self.__udpsocket.sendto(protocol.protocol_header(444), client_address)
                     
                     if message:
                         self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message, token)
+                        self.__roomList[room_name].changeClientAddress(token, client_address)
                         # sent = self.__udpsocket.sendto(body, self.__roomList[room_name].verified_token_to_address[token])
                         # print("Sent back to ... {}".format(sent))
                 
@@ -128,7 +154,6 @@ class Server:
     def startServer(self):
         # TCP 並列処理
         threading.Thread(target=self.wait_tcp_connetcion, daemon=True).start()
-        # threading.Thread(target=self.udp_recvAndSend, daemon=True).start()
         self.udp_recvAndSend()
         
     # TCP start
@@ -140,7 +165,7 @@ class Server:
             try:
                 tcp_connection, client_address = self.__tcpsocket.accept()
                 threading.Thread(target=self.start_room_TCP, args=(tcp_connection, client_address,)).start()
-                # self.udp_recvAndSend()
+                
             except Exception as e:
                 print("Socket close, Error => ", e)
                 self.__tcpsocket.close()
@@ -201,7 +226,6 @@ class Server:
                 self.tcp_response(tcp_connection, res_room_exist)
                 self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[501], "utf-8"))
                 
-            
         # room参加
         elif operation == 2:
             print("try to join the room")
@@ -237,7 +261,7 @@ class Server:
                     self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
             
         else:
-            res_failed =  protocol.response_proctocol(room_name_size, operation, state, STATUS_MESSAGE[000])
+            res_failed =  protocol.response_header(state, STATUS_MESSAGE[000])
             self.tcp_response(tcp_connection, res_failed)
             
         self.tcp_close(tcp_connection)
@@ -248,7 +272,6 @@ class Server:
     def tcp_close(self, tcp_connection):
         print("Closing current TCP connection")
         tcp_connection.close()
-            
             
     def response_to_client(self, tcp_connection, state, num):
         secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))

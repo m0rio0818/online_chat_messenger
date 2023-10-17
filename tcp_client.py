@@ -7,6 +7,11 @@ import json
 
 import protocol
 
+STATUS_MESSAGE = {
+    444: "you left the room. please re enter the room if u want to join this community"
+}
+
+
 
 class Client:
     def __init__(self, buffer=4096) -> None:
@@ -34,9 +39,7 @@ class Client:
     def sendMessage(self, message):
         messageHeader = protocol.udp_protocolheader(self.__room_name_size, self.__tokensize)
         # サーバーへメッセージを送信
-        # print("Message To Server: ",(messageHeader + self.__room_name + self.__token + message))
         bMessage = bytes(self.__room_name + self.__token + message, "utf-8")
-        print(messageHeader + bMessage)
         sent = self.__udpsocket.sendto(messageHeader + bMessage, (self.__udp_address, self.__udp_port))
         return sent
         
@@ -50,18 +53,13 @@ class Client:
                     self.__firstSent = True
                 
                 message = input("Input message your messsage : ")
-                if message == "exit":
-                    break
                 if not message:
                     print("No message please input again\n")
                     continue
-                
+                               
                 sent = self.sendMessage(message)
-                
                 print('send {} bytes'.format(sent))
-                self.__lastSenttime = time.time()
-                self.checkActive()
-                            
+                
         except KeyboardInterrupt as e:
             print("keyboardInterrrupt called!" + str(e))
             
@@ -74,7 +72,11 @@ class Client:
             while self.__connection:
                 print("Waiting to recive....")
                 data, server = self.__udpsocket.recvfrom(self.__buffer)
-                print("Recived {!r}".format(data))
+                # print(int.from_bytes(data, "big"))
+                if int.from_bytes(data, "big") == 444:
+                    self.__connection = False
+                    break
+                print("Recived {}".format(data.decode()))
             print("接続が切れました。")
         except KeyboardInterrupt as e:
             print("keyboard interuppted !!!", str(e))
@@ -86,8 +88,9 @@ class Client:
     def checkActive(self):
         while True:
             currentTime = time.time()
-            if currentTime - self.__lastSenttime > 10:
+            if currentTime - self.__lastSenttime > 600:
                 self.__connection = False
+                print("接続が切れました。")
                 break
             time.sleep(1)
 
