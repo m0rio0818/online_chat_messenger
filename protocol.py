@@ -1,6 +1,6 @@
      
 def get_server_response_of_header(data):
-    state =int.from_bytes(data[:1], "big")
+    state = int.from_bytes(data[:1], "big")
     messagelength = int.from_bytes(data[2:], "big")     
     return (state, messagelength)
         
@@ -25,10 +25,13 @@ def tcp_header_recive(tcp_connection):
     return (room_name_size, operation, state, payloadSize)
     
         
-def get_udp_header( data):
-    room_name_size = int.from_bytes(data[:1], "big")
-    token_size = int.from_bytes(data[1:2], "big")
-    return (room_name_size, token_size)
+def get_udp_body(body):
+    room_name_size = int.from_bytes(body[:1], "big")
+    token_size = int.from_bytes(body[1:2], "big")
+    room_name = body[2:room_name_size+2].decode()
+    token = body[room_name_size+2:room_name_size+token_size+2].decode()
+    message = body[room_name_size+token_size+2:].decode()
+    return (room_name_size, token_size, room_name, token, message)
 
 def tcp_body_recive(tcp_connection, room_name_size, payloadSize):
     data = tcp_connection.recv(room_name_size + payloadSize).decode()

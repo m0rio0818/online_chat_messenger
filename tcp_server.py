@@ -21,7 +21,8 @@ STATUS_MESSAGE = {
 
 
 class UserInfo:
-    def __init__(self, address, port, userName, isHost=False) -> None:
+    def __init__(self, token, address, port, userName, isHost=False) -> None:
+        self.token = token
         self.isHost = isHost
         self.address = address
         self.port = port
@@ -36,10 +37,14 @@ class ChatRoomInfo:
         self.roomMember = []
         self.verified_token_to_address = {} # token : address
         
-    def joinRoom(self, user:UserInfo, token: string, address: string):
+    def joinRoom(self, user:UserInfo, address: string, token: string,):
         self.roomMember.append(user)
         self.verified_token_to_address[token] = address
         print("現在の部屋人数: ", len(self.roomMember), "最大部屋人数: " ,self.maxroomMember,)
+    
+    def sendMessagetoAllUser(self, udpsocket, message, token):
+        for tokenkey in self.verified_token_to_address.keys():
+            udpsocket.sendto(bytes(message, "utf-8"), self.verified_token_to_address[tokenkey])
     
     def checkLimitNumMember(self):
         return len(self.roomMember) < self.maxroomMember
@@ -74,10 +79,11 @@ class Server:
         self.__udp__prot = __udp__prot
         self.__buffer = buffer
         self.__roomList = {
-                # roomName: ChatRoomInfo()
                 "roomEx": ChatRoomInfo(4, "roomEx", "password"),
                 "room2":  ChatRoomInfo(4, "room2", "password"),
             }
+            # roomName: ChatRoomInfo()
+        
         
         self.__tcpsocket.bind((self.__tcpaddress, self.__tcpport))
         self.__udpsocket.bind((self.__udp_address, self.__udp__prot))
@@ -85,36 +91,28 @@ class Server:
 
     def generateToken(selef, size = 128):
         return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(size))      
-
-    def get_udp_header(self, data):
-        room_name_size = int.from_bytes(data[:1], "big")
-        token_size = int.from_bytes(data[1:2], "big")
-        return (room_name_size, token_size)
     
     # udp_start      
     def udp_recvAndSend(self):
         try:
             while True:
-                print("Starting recive message...")
                 try:
-                    print("UDP start")
                     body, client_address = self.__udpsocket.recvfrom(self.__buffer)
-                    # room_name_size, token_size = protocol.get_udp_header(data)
-                    print(body)
-                    print(body[:2])
-                    room_name_size = int.from_bytes(body[:1], "big")
-                    token_size = int.from_bytes(body[1:2], "big")
-                    print("Messsage Header", room_name_size, token_size)                
-                                        
-                    # body = self.__udpsocket.recv(self.__buffer)
-                    room_name = body[2:room_name_size+2].decode()
-                    token = body[room_name_size+2:room_name_size+token_size+2].decode()
-                    message = body[room_name_size+token_size+2:].decode()
-                    print(room_name, token, message)
-                    print(self.__roomList[room_name].verified_token_to_address, client_address)
+                    room_name_size, token_size, room_name, token, message = protocol.get_udp_body(body)
+        
+                    print(self.__roomList[room_name].verified_token_to_address[token], client_address)
                     # tokenによって、addressをTCPの時から上書きする。
+                    # userInfoも同様
+                    self.__roomList[room_name].verified_token_to_address[token] =  client_address
+
                     
                     print("Recived {} bytes from {}".format(len(body), client_address))
+                    
+                    if body:
+                        sent = self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message, token)
+                        # sent = self.__udpsocket.sendto(body, self.__roomList[room_name].verified_token_to_address[token])
+                        print("Sent back to ... {}".format(sent))
+                
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
                     break
@@ -159,15 +157,14 @@ class Server:
         
         # body受信        
         room_name, opeartionPayloadjson = protocol.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
-        # print(room_name, " : ",opeartionPayloadjson)
         opeartionPayload = json.loads(opeartionPayloadjson)
 
         # header (32バイト)：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | message（29バイト）
         # サーバー初期化(0)
         print("Server just start!")
         # token クライアント生成
-        token = self.generateToken()  
-        client = UserInfo(opeartionPayload["ip"], opeartionPayload["port"], opeartionPayload["userName"])
+        token = self.generateToken()
+        client = UserInfo(token, opeartionPayload["ip"], opeartionPayload["port"], opeartionPayload["userName"])
         
         # room作成
         if operation == 1:
@@ -192,7 +189,7 @@ class Server:
                 # room 作成    
                 # リクエスト完了(2) : ルーム作成完了
                 self.makeRoom(room_name, opeartionPayload["password"])
-                self.__roomList[room_name].joinRoom(client, token, client_address)
+                self.__roomList[room_name].joinRoom(client, client_address, token,)
                 
                 # 2回目
                 res_make_init = protocol.response_header(state, len(STATUS_MESSAGE[401]))
@@ -233,9 +230,9 @@ class Server:
                     secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
                     self.tcp_response(tcp_connection, secondeResponse_header)
                     self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
-                    print("部屋に入室しました。")
                     # 2回目(token)
                     self.tcp_response(tcp_connection, bytes(token, "utf-8"))
+                    print("部屋に入室しました。")
                 else:
                     print("エラーのため、部屋に入室できませんでした。", STATUS_MESSAGE[num])
                     # 2回目

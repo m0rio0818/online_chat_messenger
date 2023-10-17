@@ -27,44 +27,26 @@ class Client:
         self.__password = ""
         self.__connection = True
         self.__lastSenttime = time.time()
+        self.__firstSent = False
         
         self.__udpsocket.bind((self.__udp_address, 0))
         
-    # UDP start
-    def udp_start(self):
-        print("Starting up on UDP : {}  {}".format(self.__udpsocket, 0))
-        # print(self.__udp_address, self.__udp_port)
-        # thread_send = threading.Thread(target=self.udp_sendMessage)
-        # thread_recive = threading.Thread(target = self.udp_recive)
-        # thread_checkConnectiontime = threading.Thread(target=self.udp_checkTime)
-
-        try:
-            while self.__connection:
-                self.udp_sendMessage()
-                self.udp_recive()
-                # thread_checkConnectiontime.start()
-                # thread_send.start()
-                # thread_recive.start()
-                # thread_send.join()
-                # thread_checkConnectiontime.join()
-                # thread_recive.join()
-                
-        except KeyboardInterrupt as e:
-            print("keyboardInterrrupt called!" + str(e))
-            
-        except OSError as e:
-            print("OS Error ! " + str(e))
-            
-        finally:
-            self.udp_close()    
+    def sendMessage(self, message):
+        messageHeader = protocol.udp_protocolheader(self.__room_name_size, self.__tokensize)
+        # サーバーへメッセージを送信
+        # print("Message To Server: ",(messageHeader + self.__room_name + self.__token + message))
+        bMessage = bytes(self.__room_name + self.__token + message, "utf-8")
+        print(messageHeader + bMessage)
+        sent = self.__udpsocket.sendto(messageHeader + bMessage, (self.__udp_address, self.__udp_port))
+        return sent
+        
         
     def udp_sendMessage(self):
         try:
             while True:
-                messageHeader = protocol.udp_protocolheader(self.__room_name_size, self.__tokensize)
-                # print(messageHeader)
-                # sent = self.__udpsocket.sendto(messageHeader, (self.__udp_address, self.__udp_port))
-                # print(sent)
+                if not self.__firstSent:
+                    message = ""
+                    sent = self.sendMessage(message)
                 
                 message = input("Input message your messsage : ")
                 if message == "exit":
@@ -73,14 +55,13 @@ class Client:
                     print("No message please input again\n")
                     continue
                 
-                # サーバーへメッセージを送信
-                # print("Message To Server: ",(messageHeader + self.__room_name + self.__token + message))
-                bMessage = bytes(self.__room_name + self.__token + message, "utf-8")
-                print(messageHeader + bMessage)
-                sent = self.__udpsocket.sendto(messageHeader + bMessage, (self.__udp_address, self.__udp_port))
+                sent = self.sendMessage(message)
                 
                 print('send {} bytes'.format(sent))
                 self.__lastSenttime = time.time()
+                
+                data, server = self.__udpsocket.recvfrom(4096)
+                print(data)
             
         except KeyboardInterrupt as e:
             print("keyboardInterrrupt called!" + str(e))
