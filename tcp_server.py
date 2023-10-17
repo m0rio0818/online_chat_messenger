@@ -84,7 +84,6 @@ class Server:
             }
             # roomName: ChatRoomInfo()
         
-        
         self.__tcpsocket.bind((self.__tcpaddress, self.__tcpport))
         self.__udpsocket.bind((self.__udp_address, self.__udp__prot))
 
@@ -98,20 +97,20 @@ class Server:
             while True:
                 try:
                     body, client_address = self.__udpsocket.recvfrom(self.__buffer)
-                    room_name_size, token_size, room_name, token, message = protocol.get_udp_body(body)
+                    room_name, token, message = protocol.get_udp_body(body)
+                    print(room_name, token, message)
         
                     print(self.__roomList[room_name].verified_token_to_address[token], client_address)
                     # tokenによって、addressをTCPの時から上書きする。
                     # userInfoも同様
-                    self.__roomList[room_name].verified_token_to_address[token] =  client_address
-
                     
+                    self.__roomList[room_name].verified_token_to_address[token] =  client_address
                     print("Recived {} bytes from {}".format(len(body), client_address))
                     
-                    if body:
-                        sent = self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message, token)
+                    if message:
+                        self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message, token)
                         # sent = self.__udpsocket.sendto(body, self.__roomList[room_name].verified_token_to_address[token])
-                        print("Sent back to ... {}".format(sent))
+                        # print("Sent back to ... {}".format(sent))
                 
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
@@ -153,8 +152,6 @@ class Server:
         
         # header受信
         room_name_size, operation, state, payloadSize = protocol.tcp_header_recive(tcp_connection)
-        print(room_name_size, operation, state, payloadSize)
-        
         # body受信        
         room_name, opeartionPayloadjson = protocol.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
         opeartionPayload = json.loads(opeartionPayloadjson)
@@ -223,7 +220,6 @@ class Server:
             else:
                 print("部屋に入室します")
                 joinRoomCheck, num = self.check_joinRoom(room_name, opeartionPayload["password"])
-                print(joinRoomCheck, num)
                 if joinRoomCheck:
                     self.__roomList[room_name].joinRoom(client, client_address, token)
                     # 1回目

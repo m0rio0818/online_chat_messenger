@@ -43,10 +43,11 @@ class Client:
         
     def udp_sendMessage(self):
         try:
-            while True:
+            while self.__connection:
                 if not self.__firstSent:
                     message = ""
                     sent = self.sendMessage(message)
+                    self.__firstSent = True
                 
                 message = input("Input message your messsage : ")
                 if message == "exit":
@@ -59,10 +60,8 @@ class Client:
                 
                 print('send {} bytes'.format(sent))
                 self.__lastSenttime = time.time()
-                
-                data, server = self.__udpsocket.recvfrom(4096)
-                print(data)
-            
+                self.checkActive()
+                            
         except KeyboardInterrupt as e:
             print("keyboardInterrrupt called!" + str(e))
             
@@ -83,6 +82,14 @@ class Client:
             print("OS Error ! " + str(e))
         finally:
             self.udp_close()
+            
+    def checkActive(self):
+        while True:
+            currentTime = time.time()
+            if currentTime - self.__lastSenttime > 10:
+                self.__connection = False
+                break
+            time.sleep(1)
 
     
     def udp_checkTime(self):
