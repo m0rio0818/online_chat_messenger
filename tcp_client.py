@@ -21,7 +21,6 @@ class Client:
         self.__udp_address = "0.0.0.0"
         self.__tcp_port = 9001
         self.__udp_port = 9010
-        
         self.__buffer = buffer
         self.__username = ""
         self.__room_name_size = ""
@@ -43,7 +42,6 @@ class Client:
         sent = self.__udpsocket.sendto(messageHeader + bMessage, (self.__udp_address, self.__udp_port))
         return sent
         
-        
     def udp_sendMessage(self):
         try:
             while self.__connection:
@@ -61,8 +59,9 @@ class Client:
                 print('send {} bytes'.format(sent))
                 
         except KeyboardInterrupt as e:
+            sent = self.sendMessage("exit")
             print("keyboardInterrrupt called!" + str(e))
-            
+
         finally:
             print("UDP Send を終了します。")
             self.udp_close() 
@@ -84,33 +83,7 @@ class Client:
             print("OS Error ! " + str(e))
         finally:
             self.udp_close()
-            
-    def checkActive(self):
-        while True:
-            currentTime = time.time()
-            if currentTime - self.__lastSenttime > 600:
-                self.__connection = False
-                print("接続が切れました。")
-                break
-            time.sleep(1)
-
-    
-    def udp_checkTime(self):
-        try:    
-            while True:
-                currenttime = time.time()
-                if currenttime - self.__lastSenttime > 600:
-                    self.__connection = False
-                    break
-                time.sleep(1)
-        except TimeoutError as e:
-            print("セッション有効期限が切れました。")
-            print(e)
-        finally:
-            print("接続時間が切れました。")
-            self.udp_close()
-            
-        
+                    
     def udp_close(self):
         print("Closing UDP socket")
         self.__udpsocket.close()    
@@ -149,17 +122,18 @@ class Client:
         else:
             state = 9
             
+        username = input("input your Name (userName) : ")
+        self.__username = username      
+            
         noRoom = True      
         try:
             while noRoom:
-                username = input("input your Name (userName) : ")
                 roomName = input("input Room Name you want to join in : ")
                 password = input("input Password : ")
                 self.__room_name = roomName
                 self.__password = password
                 self.__room_name_size = len(self.__room_name)
-                self.__username = username          
-         
+            
                 payload = {
                     "password": self.__password,
                     "userName" : self.__username,
@@ -193,28 +167,23 @@ class Client:
                     state, messagelength = protocol.get_server_response_of_header(response2)
                     print(state, messagelength)
                     if state == 2:
-                        # roomName = input("input room name where you want to join : ")
-                        # header = self.tcp_chatroom_protocolheader(self.__room_name_size, operation, state, self.__payloadSize)
-                        # self.__tcpsocket.send(header)
                         print("リクエストの応答(2): 部屋が作成されました")
                         secondresponse_Message = self.__tcpsocket.recv(messagelength).decode()
                         print(secondresponse_Message)
                         self.__token = self.__tcpsocket.recv(128).decode("utf-8")
                         self.__tokensize = len(self.__token)
                         noRoom = False
-                    # それ以外だと、もう一度名前を入力してもらいたい。
                     else:
-                        print(state , "!== 2")
                         secondresponse_Message = self.__tcpsocket.recv(messagelength).decode()
                         print(secondresponse_Message)
                         noRoom = True
+                        continue
                         
                 elif operation == 2:
                     # 1回目
                     response_init = self.__tcpsocket.recv(32)
                     state, messagelength = protocol.get_server_response_of_header(response_init)
-                    message = self.__tcpsocket.recv(messagelength)
-                    print("1回目",message)
+                    message = self.__tcpsocket.recv(messagelength).decode()
                     
                     if message == "Room Does not Exist":
                         print("その部屋は存在しません。")
@@ -237,6 +206,9 @@ class Client:
             
         except TimeoutError:
             print("Socket timeout, ending listning for serever messages")
+            
+        except KeyboardInterrupt as e:
+            print("keyBoard Interrupt. plz retry it.")
             
 
     def tcp_close(self):

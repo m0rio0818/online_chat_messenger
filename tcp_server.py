@@ -56,11 +56,13 @@ class ChatRoomInfo:
         return self.password == password
     
     def leaveRoom(self, token):
+        print("現在の部屋のメンバー", self.roomMember)
         self.verified_token_to_address.pop(token)
         for i in range(len(self.roomMember)):
             if self.roomMember[i].token == token:
                 self.roomMember.pop(i)
                 break
+        print("現在の部屋のメンバー", self.roomMember)
         print("部屋を退出しました。")
 
         
@@ -129,14 +131,13 @@ class Server:
                     self.__roomList[room_name].findRoomMember(token).lastActiveTime = time.time()
                     
                     if message == "exit":
+                        # ここでexitしたのがhostかどうか調べる。
                         self.__roomList[room_name].leaveRoom(token)
                         self.__udpsocket.sendto(protocol.protocol_header(444), client_address)
                     
                     if message:
                         self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message, token)
                         self.__roomList[room_name].changeClientAddress(token, client_address)
-                        # sent = self.__udpsocket.sendto(body, self.__roomList[room_name].verified_token_to_address[token])
-                        # print("Sent back to ... {}".format(sent))
                 
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
@@ -171,101 +172,101 @@ class Server:
                 self.__tcpsocket.close()
             
     def start_room_TCP(self, tcp_connection, client_address):
-        print("TCP Connection from {}".format(client_address))
-        # 初回のクライアントからの送信をを受信 + 確認内容送信
-        print("TCP just started ")
-        
-        # header受信
-        room_name_size, operation, state, payloadSize = protocol.tcp_header_recive(tcp_connection)
-        # body受信        
-        room_name, opeartionPayloadjson = protocol.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
-        opeartionPayload = json.loads(opeartionPayloadjson)
+        roomCheck = True
+        while roomCheck:
+            print("TCP just started ")
+            print("TCP Connection from {}".format(client_address))
+                        
+            # header受信
+            room_name_size, operation, state, payloadSize = protocol.tcp_header_recive(tcp_connection)
+            # body受信        
+            room_name, opeartionPayloadjson = protocol.tcp_body_recive(tcp_connection, room_name_size, payloadSize)
+            opeartionPayload = json.loads(opeartionPayloadjson)
 
-        # header (32バイト)：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | message（29バイト）
-        # サーバー初期化(0)
-        print("Server just start!")
-        # token クライアント生成
-        token = self.generateToken()
-        client = UserInfo(token, opeartionPayload["ip"], opeartionPayload["port"], opeartionPayload["userName"])
-        
-        # room作成
-        if operation == 1:
-            state = 1
-            # 1回目
-            # リクエスト応答(1)
-            # response_header(32バイト)： state(1バイト) | statusMessageLength(31バイト)
-            firstResponse_header = protocol.response_header(state, len(STATUS_MESSAGE[101]))
-            self.tcp_response(tcp_connection, firstResponse_header)
-            # response_body: statusMessage(statusMessageLenバイト)
-            self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[101], "utf-8"))
-            print("Header(1回目)返信しました。")
+            # header (32バイト)：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | message（29バイト）
+            # サーバー初期化(0)
+            print("Server just start!")
+            # token クライアント生成
+            token = self.generateToken()
+            client = UserInfo(token, opeartionPayload["ip"], opeartionPayload["port"], opeartionPayload["userName"])
             
-            state = 2
-            # 2回目           
-            print("roomの存在チェックを行います。roomName : {}".format(room_name))
-            print("tcp_connection client 情報 {}:  ".format(client_address))
-            
-            # 部屋名が存在するか確認
-            if not self.findRoom(room_name):
-                print("その部屋を作成 + 参加します")
-                # room 作成    
-                # リクエスト完了(2) : ルーム作成完了
-                self.makeRoom(room_name, opeartionPayload["password"])
-                self.__roomList[room_name].joinRoom(client, client_address, token,)
-                
-                # 2回目
-                res_make_init = protocol.response_header(state, len(STATUS_MESSAGE[401]))
-                self.tcp_response(tcp_connection, res_make_init)
-                self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[401], "utf-8"))
-                # 3回目(Token)
-                self.tcp_response(tcp_connection, bytes(token, "utf-8"))
-            else:
-                print("その部屋名はすでに存在しています。違う部屋名を再度入力してください。")
-                state = 9
-                res_room_exist = protocol.response_header(state, len(STATUS_MESSAGE[501]))
-                self.tcp_response(tcp_connection, res_room_exist)
-                self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[501], "utf-8"))
-                
-        # room参加
-        elif operation == 2:
-            print("try to join the room")
-            print("部屋名、参加したいパスワードを受け取りました。", opeartionPayload["userName"], room_name, opeartionPayload["password"])
-
-            # 部屋が見つからなかった場合
-            if not self.findRoom(room_name):
-                print("その部屋名は存在しません")
-                # 1回目
-                firstResponse_header = protocol.response_header(state, len(STATUS_MESSAGE[404]))
+            # room作成
+            if operation == 1:
+                state = 1
+                # リクエスト応答(1)
+                # response_header(32バイト)： state(1バイト) | statusMessageLength(31バイト)
+                firstResponse_header = protocol.response_header(state, len(STATUS_MESSAGE[101]))
                 self.tcp_response(tcp_connection, firstResponse_header)
-                self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[404], "utf-8"))
-                print("データを送信しました。")
+                # response_body: statusMessage(statusMessageLenバイト)
+                self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[101], "utf-8"))
                 
-            # 部屋が見つかった場合
-            else:
-                print("部屋に入室します")
-                joinRoomCheck, num = self.check_joinRoom(room_name, opeartionPayload["password"])
-                if joinRoomCheck:
-                    self.__roomList[room_name].joinRoom(client, client_address, token)
-                    # 1回目
-                    secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
-                    self.tcp_response(tcp_connection, secondeResponse_header)
-                    self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
-                    # 2回目(token)
-                    self.tcp_response(tcp_connection, bytes(token, "utf-8"))
-                    print("部屋に入室しました。")
-                else:
-                    print("エラーのため、部屋に入室できませんでした。", STATUS_MESSAGE[num])
+                print("roomの存在チェックを行います。roomName : {}".format(room_name))
+                print("tcp_connection client 情報 {}: ".format(client_address))
+                
+                state = 2
+                # 部屋名が存在するか確認
+                if not self.findRoom(room_name):
+                    print("その部屋を作成 + 参加します")
+                    # room 作成    
+                    # リクエスト完了(2) : ルーム作成完了
+                    self.makeRoom(room_name, opeartionPayload["password"])
+                    self.__roomList[room_name].joinRoom(client, client_address, token,)
+                    
                     # 2回目
-                    secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
-                    self.tcp_response(tcp_connection, secondeResponse_header)
-                    self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
-            
-        else:
-            res_failed =  protocol.response_header(state, STATUS_MESSAGE[000])
-            self.tcp_response(tcp_connection, res_failed)
-            
+                    res_make_init = protocol.response_header(state, len(STATUS_MESSAGE[401]))
+                    self.tcp_response(tcp_connection, res_make_init)
+                    self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[401], "utf-8"))
+                    # 3回目(Token)
+                    self.tcp_response(tcp_connection, bytes(token, "utf-8"))
+                    roomCheck = False
+                    
+                else:
+                    print("その部屋名はすでに存在しています。違う部屋名を再度入力してください。")
+                    state = 9
+                    res_room_exist = protocol.response_header(state, len(STATUS_MESSAGE[501]))
+                    self.tcp_response(tcp_connection, res_room_exist)
+                    self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[501], "utf-8"))
+                    
+            # room参加
+            elif operation == 2:
+                print("try to join the room")
+                print("部屋名、参加したいパスワードを受け取りました。", opeartionPayload["userName"], room_name, opeartionPayload["password"])
+
+                # 部屋が見つからなかった場合
+                if not self.findRoom(room_name):
+                    print("その部屋名は存在しません")
+                    # 1回目
+                    firstResponse_header = protocol.response_header(state, len(STATUS_MESSAGE[404]))
+                    self.tcp_response(tcp_connection, firstResponse_header)
+                    self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[404], "utf-8"))
+                    print("データを送信しました。")
+                    
+                # 部屋が見つかった場合
+                else:
+                    print("部屋に入室します")
+                    joinRoomCheck, num = self.check_joinRoom(room_name, opeartionPayload["password"])
+                    if joinRoomCheck:
+                        self.__roomList[room_name].joinRoom(client, client_address, token)
+                        # 1回目
+                        secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
+                        self.tcp_response(tcp_connection, secondeResponse_header)
+                        self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
+                        # 2回目(token)
+                        self.tcp_response(tcp_connection, bytes(token, "utf-8"))
+                        print("部屋に入室しました。")
+                    else:
+                        print("エラーのため、部屋に入室できませんでした。", STATUS_MESSAGE[num])
+                        # 2回目
+                        secondeResponse_header = protocol.response_header(state,  len(STATUS_MESSAGE[num]))
+                        self.tcp_response(tcp_connection, secondeResponse_header)
+                        self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
+                
+            else:
+                res_failed =  protocol.response_header(state, STATUS_MESSAGE[000])
+                self.tcp_response(tcp_connection, res_failed)
+                
         self.tcp_close(tcp_connection)
-        
+            
     def tcp_response(self, tcp_connection, data):
         tcp_connection.sendall(data)
             
