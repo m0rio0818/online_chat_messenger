@@ -8,9 +8,9 @@ import json
 import protocol
 
 STATUS_MESSAGE = {
-    444: "you left the room. please re enter the room if u want to join this community"
+    444: "you left the room. please re enter the room if u want to join this community",
+    404: "Host left the room. you have to leave the room."
 }
-
 
 
 class Client:
@@ -29,8 +29,8 @@ class Client:
         self.__tokensize = ""
         self.__payloadSize = ""
         self.__password = ""
-        self.__connection = True
         self.__lastSenttime = time.time()
+        self.__connection = True
         self.__firstSent = False
         
         self.__udpsocket.bind((self.__udp_address, 0))
@@ -74,11 +74,10 @@ class Client:
             while self.__connection:
                 print("Waiting to recive....")
                 data, server = self.__udpsocket.recvfrom(self.__buffer)
-                # print("受け取ったメッセージ", data.decode())
-                # print(int.from_bytes(data, "big"))
-                # if int.from_bytes(data, "big") == 444:
-                #     print("この切断メッセージを受け取りました。")
-                  
+                print(data)              
+                if int.from_bytes(data, "big") == 444:
+                    self.__connection = False
+                
                 print("Recived {}".format(data.decode()))
             print("接続が切れました。")
         except KeyboardInterrupt as e:
@@ -147,7 +146,6 @@ class Client:
                
                 jsonPayload = json.dumps(payload)
                 self.__payloadSize = len(jsonPayload)
-                print(jsonPayload)
                 
                 # TCP接続確立後のヘッダー送信
                 # ヘッダー（32バイト）：RoomNameSize（1バイト） | Operation（1バイト） | State（1バイト） | OperationPayloadSize（29バイト)

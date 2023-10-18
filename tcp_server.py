@@ -37,7 +37,7 @@ class ChatRoomInfo:
         self.password = roomPassword
         self.lastActiveTime = time.time()
         self.roomMember = []
-        self.verified_token_to_address = {} # token : address
+        self.verified_token_to_address = {}  # token : address
         
     def joinRoom(self, user:UserInfo, address: string, token: string,):
         self.roomMember.append(user)
@@ -46,37 +46,35 @@ class ChatRoomInfo:
     
     def sendMessagetoAllUser(self, udpsocket, message):
         for tokenkey in self.verified_token_to_address.keys():
-            print(self.verified_token_to_address[tokenkey])
-            if message == "exit":
-                info = "ホストが退出しました。こちらの部屋は閉じられます。"
-                udpsocket.sendto(bytes(info, "utf-8"), self.verified_token_to_address[tokenkey])
+            user = self.verified_token_to_address[tokenkey]
+            if type(message) == "int":
+                udpsocket.sendto(protocol.protocol_header(message), user)
             else:
-                udpsocket.sendto(bytes(message, "utf-8"), self.verified_token_to_address[tokenkey])
+                print(user)
+                udpsocket.sendto(bytes(message, "utf-8"), user)
 
     def checkLimitNumMember(self):
         return len(self.roomMember) < self.maxroomMember
     
     def checkPassword(self, password):
-        print(self.password, password)
         return self.password == password
     
     def leaveRoom(self, token, udpsocket,):
         leaveUser = self.findRoomMember(token)
         leaveIndex = self.findRoomMemberIndex(token)
-        print("現在の部屋のメンバー", self.roomMember, "部屋をさりたいと言った人 {} [{}]".format(self.verified_token_to_address[token], leaveUser.isHost))
+        print("部屋を去りたいと言った人 {} [{}]".format(self.verified_token_to_address[token], leaveUser.isHost))
         if leaveUser.isHost:
-            self.sendMessagetoAllUser(udpsocket, "exit")
+            info  = "{} [{}] (ホスト) は部屋を去りました。この部屋は閉じられます {}".format(leaveUser.userName, (leaveUser.address, leaveUser.port), leaveUser.isHost)
+            print(info)
+            self.sendMessagetoAllUser(udpsocket, 444)
             self.roomMember.clear()
             self.verified_token_to_address.clear()
-            print("現在の部屋のメンバー", self.roomMember)
             print("全員部屋を退出しました。")
         else:
-            info  = leaveUser.userName + "は部屋を去りました。"
-            print(info)
-            udpsocket.sendto(bytes(info, "utf-8"), self.verified_token_to_address[token])   
+            info = "{}  [{}] は部屋を去りました。{}".format(leaveUser.userName, (leaveUser.address, leaveUser.port), leaveUser.isHost)
+            self.sendMessagetoAllUser(udpsocket, info)
             self.roomMember.pop(leaveIndex)
             self.verified_token_to_address.pop(token)
-            print("現在の部屋のメンバー", self.roomMember)
             print("部屋を退出しました。")
         
     def changeClientAddress(self, token, address):
@@ -142,23 +140,20 @@ class Server:
                     print(room_name, message)
         
                     if (self.__roomList[room_name].verified_token_to_address[token] != client_address):
-                        print("tokenによって、addressをTCPの時から上書きする。")
                         self.__roomList[room_name].verified_token_to_address[token] = client_address
                         self.__roomList[room_name].changeClientAddress(token, client_address)
                     
                     print("Recived {} [{} bytes] from {}".format(message, len(body), client_address))
-                    # ここでユーザーの最新アクティブ時間の変更
+                    # ユーザーの最新アクティブ時間の変更
                     self.__roomList[room_name].findRoomMember(token).lastActiveTime = time.time()
                     
                     if message == "exit":
                         self.__roomList[room_name].leaveRoom(token, self.__udpsocket)
-                        
                     if message:
                         self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message)
-                        # self.__roomList[room_name].changeClientAddress(token, client_address)
                 
                 except KeyboardInterrupt:
-                    print("\n KeyBoardInterrupted!")
+                    print("\n KeyBoardInterrupted!!!!")
                     break
                 except Exception as e:
                     print("例外発生: ", e)
