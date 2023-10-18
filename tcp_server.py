@@ -42,12 +42,14 @@ class ChatRoomInfo:
     def joinRoom(self, user:UserInfo, address: string, token: string,):
         self.roomMember.append(user)
         self.verified_token_to_address[token] = address
-        print("現在の部屋人数: ", len(self.roomMember), "最大部屋人数: " ,self.maxroomMember,)
+        print("現在の部屋人数: ", len(self.roomMember), "最大部屋人数: " ,self.maxroomMember, self.roomMember)
     
     def sendMessagetoAllUser(self, udpsocket, message):
         for tokenkey in self.verified_token_to_address.keys():
-            if type(message) == "number":
-                udpsocket.sendto(protocol.protocol_header(444), self.verified_token_to_address[tokenkey])
+            print(self.verified_token_to_address[tokenkey])
+            if message == "exit":
+                info = "ホストが退出しました。こちらの部屋は閉じられます。"
+                udpsocket.sendto(bytes(info, "utf-8"), self.verified_token_to_address[tokenkey])
             else:
                 udpsocket.sendto(bytes(message, "utf-8"), self.verified_token_to_address[tokenkey])
 
@@ -59,24 +61,23 @@ class ChatRoomInfo:
         return self.password == password
     
     def leaveRoom(self, token, udpsocket,):
-        print("現在の部屋のメンバー", self.roomMember)
-        for i in range(len(self.roomMember)):
-            if self.roomMember[i].token == token:
-                if self.roomMember[i].isHost:
-                    self.sendMessagetoAllUser(udpsocket, 404)
-                    self.roomMember.clear()
-                    self.verified_token_to_address.clear()
-                    print("現在の部屋のメンバー", self.roomMember)
-                    print("全員部屋を退出しました。")
-                    break
-                else:
-                    udpsocket.sendto(protocol.protocol_header(444), self.verified_token_to_address[token])   
-                    self.roomMember.pop(i)
-                    self.verified_token_to_address.pop(token)
-                    print("現在の部屋のメンバー", self.roomMember)
-                    print("部屋を退出しました。")
-                    break
-
+        leaveUser = self.findRoomMember(token)
+        leaveIndex = self.findRoomMemberIndex(token)
+        print("現在の部屋のメンバー", self.roomMember, "部屋をさりたいと言った人 {} [{}]".format(self.verified_token_to_address[token], leaveUser.isHost))
+        if leaveUser.isHost:
+            self.sendMessagetoAllUser(udpsocket, "exit")
+            self.roomMember.clear()
+            self.verified_token_to_address.clear()
+            print("現在の部屋のメンバー", self.roomMember)
+            print("全員部屋を退出しました。")
+        else:
+            info  = leaveUser.userName + "は部屋を去りました。"
+            print(info)
+            udpsocket.sendto(bytes(info, "utf-8"), self.verified_token_to_address[token])   
+            self.roomMember.pop(leaveIndex)
+            self.verified_token_to_address.pop(token)
+            print("現在の部屋のメンバー", self.roomMember)
+            print("部屋を退出しました。")
         
     def changeClientAddress(self, token, address):
         for member in self.roomMember:
@@ -90,6 +91,12 @@ class ChatRoomInfo:
             if member.token == token:
                 return member
         return False
+    
+    def findRoomMemberIndex(self, token):
+        for i in range(len(self.roomMember)):
+            if self.roomMember[i].token == token:
+                return i
+        return -1
     
     def checkHost(self):
         for member in self.roomMember:
@@ -132,10 +139,11 @@ class Server:
                 try:
                     body, client_address = self.__udpsocket.recvfrom(self.__buffer)
                     room_name, token, message = protocol.get_udp_body(body)
+                    print(room_name, message)
         
                     if (self.__roomList[room_name].verified_token_to_address[token] != client_address):
-                        # tokenによって、addressをTCPの時から上書きする。
-                        self.__roomList[room_name].verified_token_to_address[token] =  client_address
+                        print("tokenによって、addressをTCPの時から上書きする。")
+                        self.__roomList[room_name].verified_token_to_address[token] = client_address
                         self.__roomList[room_name].changeClientAddress(token, client_address)
                     
                     print("Recived {} [{} bytes] from {}".format(message, len(body), client_address))
@@ -144,11 +152,10 @@ class Server:
                     
                     if message == "exit":
                         self.__roomList[room_name].leaveRoom(token, self.__udpsocket)
-            
                         
                     if message:
                         self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message)
-                        self.__roomList[room_name].changeClientAddress(token, client_address)
+                        # self.__roomList[room_name].changeClientAddress(token, client_address)
                 
                 except KeyboardInterrupt:
                     print("\n KeyBoardInterrupted!")
@@ -200,6 +207,7 @@ class Server:
             # token クライアント生成
             token = self.generateToken()
             client = UserInfo(token, opeartionPayload["ip"], opeartionPayload["port"], opeartionPayload["userName"],  True if operation == 1 else False)
+            print("クライアント情報",client, client.isHost)
             
             # room作成
             if operation == 1:
@@ -263,6 +271,7 @@ class Server:
                         self.tcp_response(tcp_connection, bytes(STATUS_MESSAGE[num], "utf-8"))
                         # 2回目(token)
                         self.tcp_response(tcp_connection, bytes(token, "utf-8"))
+                        roomCheck = False
                         print("部屋に入室しました。")
                     else:
                         print("エラーのため、部屋に入室できませんでした。", STATUS_MESSAGE[num])

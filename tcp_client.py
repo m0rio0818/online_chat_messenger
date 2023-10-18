@@ -54,9 +54,12 @@ class Client:
                 if not message:
                     print("No message please input again\n")
                     continue
+                
                                
                 sent = self.sendMessage(message)
                 print('send {} bytes'.format(sent))
+                if message == "exit":
+                    self.__connection = False
                 
         except KeyboardInterrupt as e:
             sent = self.sendMessage("exit")
@@ -71,10 +74,11 @@ class Client:
             while self.__connection:
                 print("Waiting to recive....")
                 data, server = self.__udpsocket.recvfrom(self.__buffer)
+                # print("受け取ったメッセージ", data.decode())
                 # print(int.from_bytes(data, "big"))
-                if int.from_bytes(data, "big") == 444:
-                    self.__connection = False
-                    break
+                # if int.from_bytes(data, "big") == 444:
+                #     print("この切断メッセージを受け取りました。")
+                  
                 print("Recived {}".format(data.decode()))
             print("接続が切れました。")
         except KeyboardInterrupt as e:
