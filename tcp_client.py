@@ -73,10 +73,10 @@ class Client:
         try:
             while self.__connection:
                 print("Waiting to recive....")
-                data, server = self.__udpsocket.recvfrom(self.__buffer)
-                print(data)              
+                data, server = self.__udpsocket.recvfrom(self.__buffer)           
                 if int.from_bytes(data, "big") == 444:
                     self.__connection = False
+                    break
                 
                 print("Recived {}".format(data.decode()))
             print("接続が切れました。")

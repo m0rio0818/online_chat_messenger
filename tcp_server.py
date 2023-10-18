@@ -47,7 +47,8 @@ class ChatRoomInfo:
     def sendMessagetoAllUser(self, udpsocket, message):
         for tokenkey in self.verified_token_to_address.keys():
             user = self.verified_token_to_address[tokenkey]
-            if type(message) == "int":
+            if type(message) == int:
+                print("Semt exit all member")
                 udpsocket.sendto(protocol.protocol_header(message), user)
             else:
                 print(user)
@@ -70,12 +71,14 @@ class ChatRoomInfo:
             self.roomMember.clear()
             self.verified_token_to_address.clear()
             print("全員部屋を退出しました。")
+            return True
         else:
             info = "{}  [{}] は部屋を去りました。{}".format(leaveUser.userName, (leaveUser.address, leaveUser.port), leaveUser.isHost)
             self.sendMessagetoAllUser(udpsocket, info)
             self.roomMember.pop(leaveIndex)
             self.verified_token_to_address.pop(token)
             print("部屋を退出しました。")
+            return False
         
     def changeClientAddress(self, token, address):
         for member in self.roomMember:
@@ -147,8 +150,10 @@ class Server:
                     # ユーザーの最新アクティブ時間の変更
                     self.__roomList[room_name].findRoomMember(token).lastActiveTime = time.time()
                     
-                    if message == "exit":
-                        self.__roomList[room_name].leaveRoom(token, self.__udpsocket)
+                    if message == "exit" and self.__roomList[room_name].leaveRoom(token, self.__udpsocket):
+                        self.__roomList.pop(room_name) 
+                        break
+                            
                     if message:
                         self.__roomList[room_name].sendMessagetoAllUser(self.__udpsocket, message)
                 
@@ -311,7 +316,6 @@ class Server:
         return False
    
     
-
 def main():    
     tcpaddress = '127.0.0.1'
     tcpport = 9001
